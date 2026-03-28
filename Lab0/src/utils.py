@@ -80,9 +80,9 @@ def validate(
 def fit(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    criterion: nn.Module,
     wandb_kwargs: Dict[str, Any],
     num_epochs: int = 10,
 ) -> Dict[str, List[float]]:
