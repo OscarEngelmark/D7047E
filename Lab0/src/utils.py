@@ -83,8 +83,9 @@ def fit(
     criterion: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
+    num_epochs: int,
     wandb_kwargs: Dict[str, Any],
-    num_epochs: int = 10,
+    log: bool = True
 ) -> Dict[str, List[float]]:
     """Train `model` for `num_epochs`, validating after every epoch.
 
@@ -96,6 +97,9 @@ def fit(
     -------
     history : dict with keys 'train_loss', 'val_loss', 'train_acc', 'val_acc'
     """
+
+    if not log:
+        wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
     with wandb.init(**wandb_kwargs):
 
