@@ -3,3 +3,7 @@ scipy
 torch
 torchvision
 wandb
+pandas
+matplotlib
+scikit-learn
+nltk
