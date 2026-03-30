@@ -1,6 +1,11 @@
 import pandas as pd
+import nltk
 from nltk.corpus import stopwords
 from nltk import word_tokenize
+
+nltk.download('punkt',        quiet=True)
+nltk.download('punkt_tab',    quiet=True)
+nltk.download('stopwords',    quiet=True)
 
 def preprocess_pandas(data: pd.DataFrame) -> pd.DataFrame:
     """Clean review text: lowercase, remove emails/IPs/punctuation/digits/stopwords."""
