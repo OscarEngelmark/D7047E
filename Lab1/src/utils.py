@@ -3,21 +3,59 @@ utils.py — Shared training helpers.
 
 Exports
 -------
-make_loaders: split a dataset into train/val loaders and wrap the test set
-evaluate    : evaluate a trained model on the test loader and print a summary
-train       : one training epoch
-validate    : one evaluation epoch
-fit         : full training loop with wandb logging and best-checkpoint restore
+device_check : detect and return the best available torch.device
+make_loaders : split a dataset into train/val loaders and wrap the test set
+train        : one training epoch
+validate     : one evaluation epoch
+fit          : full training loop with wandb logging and best-checkpoint restore
+evaluate     : evaluate a trained model on the test loader and print a summary
 """
 
 from typing import Any, Dict, List, Optional, Tuple
-
+import sys, platform
 import torch
 import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import VisionDataset
 
+
+def device_check() -> torch.device:
+    """Detect the best available device and print a summary of the environment.
+
+    Prefers CUDA, then MPS (Apple Silicon), then falls back to CPU.
+
+    Returns
+    -------
+    torch.device
+        The selected device (cuda, mps, or cpu).
+    """
+
+    print(f"PyTorch: {torch.__version__} | "
+          f"Python: {sys.version.split()[0]} | "
+          f"OS: {platform.system()} {platform.release()}")
+
+    cuda_available = torch.cuda.is_available()
+    print(f"CUDA available: {cuda_available}")
+
+    if cuda_available:
+        device = torch.device("cuda")
+        gpu_count = torch.cuda.device_count()
+        gpu_name = torch.cuda.get_device_name(0)
+        total_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+        print(f"GPUs: {gpu_count} x {gpu_name} ({total_mem:.1f} GB)")
+        print(f"CUDA: {torch.version.cuda} | "
+              f"cuDNN: {torch.backends.cudnn.version()}")
+        printout = f"Using cuda / {gpu_name}"
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        printout = "Using mps (Apple Silicon)"
+    else:
+        device = torch.device("cpu")
+        printout = f"Using cpu"
+
+    print(printout)
+    return device
 
 # ---------------------------------------------------------------------------
 # Data helpers
