@@ -2,6 +2,7 @@ numpy
 scipy
 torch
 torchvision
+torchmetrics
 wandb
 pandas
 matplotlib
