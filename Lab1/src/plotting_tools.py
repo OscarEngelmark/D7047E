@@ -52,12 +52,20 @@ def plot_confusion_matrix(
     labels_ = class_names if class_names else [str(i) for i in range(num_classes)]
     fig, ax = plt.subplots(figsize=(max(4, num_classes), max(4, num_classes)))
     im = ax.imshow(cm.cpu().numpy(), cmap="Blues")
-    plt.colorbar(im, ax=ax)
 
-    ax.set_xticks(range(num_classes)); ax.set_xticklabels(labels_, rotation=45, ha="right")
-    ax.set_yticks(range(num_classes)); ax.set_yticklabels(labels_)
-    ax.set_xlabel("Predicted"); ax.set_ylabel("Actual")
-    ax.set_title(title)
+    # Attach the colorbar to `ax` with a fixed fractional width so it never
+    # bleeds into the title, regardless of how tall or wide the grid is.
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    ax.set_xticks(range(num_classes))
+    ax.set_xticklabels(labels_, rotation=45, ha="right")
+    ax.set_yticks(range(num_classes))
+    ax.set_yticklabels(labels_)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+    # `y=1.02` lifts the title clear of the axes box so tight_layout
+    # has an accurate bounding box to work with.
+    ax.set_title(title, pad=10, y=1.02)
 
     # Annotate each cell with its count
     cm_max = cm.max().item()
@@ -67,5 +75,6 @@ def plot_confusion_matrix(
             color = "white" if count > cm_max * 0.6 else "black"
             ax.text(j, i, str(int(count)), ha="center", va="center", color=color)
 
-    plt.tight_layout()
+    # `rect` reserves a small top margin so the raised title is never clipped.
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.show()
