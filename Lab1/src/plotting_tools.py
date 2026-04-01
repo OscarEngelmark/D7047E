@@ -6,6 +6,10 @@ from torch.utils.data import DataLoader
 from torchmetrics import ConfusionMatrix
 
 import matplotlib.pyplot as plt
+import matplotlib_inline.backend_inline as _backend_inline
+
+# Render inline plots as SVG so all edges stay crisp regardless of screen DPI.
+_backend_inline.set_matplotlib_formats("svg")
 
 
 def plot_confusion_matrix(
