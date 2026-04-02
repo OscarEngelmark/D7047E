@@ -80,5 +80,5 @@ def plot_confusion_matrix(
             ax.text(j, i, str(int(count)), ha="center", va="center", color=color)
 
     # `rect` reserves a small top margin so the raised title is never clipped.
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
     plt.show()
