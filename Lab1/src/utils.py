@@ -194,7 +194,7 @@ def fit(
 
     Returns
     -------
-    history : dict with keys 'train_loss', 'val_loss', 'train_acc', 'val_acc'
+    history : dict with keys 'Training Loss', 'Validation Loss', 'Training Accuracy', 'Validation Accuracy'
     """
 
     if not log:
@@ -205,35 +205,32 @@ def fit(
         best_val_loss = float('inf')
         best_state   = None
         history: Dict[str, List[float]] = {
-            "train_loss": [], "val_loss": [],
-            "train_acc":  [], "val_acc":  [],
+            "Training Loss": [], "Validation Loss": [],
+            "Training Accuracy":  [], "Validation Accuracy":  [],
         }
+
+        w = len(str(num_epochs)) # Only used for printouts
 
         for epoch in range(1, num_epochs + 1):
             train_loss, train_acc = train(model, train_loader, optimizer, criterion)
             val_loss,   val_acc   = validate(model, val_loader, criterion)
 
-            history["train_loss"].append(train_loss)
-            history["val_loss"].append(val_loss)
-            history["train_acc"].append(train_acc)
-            history["val_acc"].append(val_acc)
+            history["Training Loss"].append(train_loss)
+            history["Validation Loss"].append(val_loss)
+            history["Training Accuracy"].append(train_acc)
+            history["Validation Accuracy"].append(val_acc)
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_state   = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
             print(
-                f"Epoch {epoch:>{len(str(num_epochs))}}/{num_epochs} | "
+                f"Epoch {epoch:>{w}}/{num_epochs} | "
                 f"train loss {train_loss:.4f}, train acc {train_acc:.2f}% | "
                 f"val loss {val_loss:.4f}, val acc {val_acc:.2f}%"
             )
 
-            wandb.log({
-                "Training Loss":       train_loss,
-                "Training Accuracy":   train_acc,
-                "Validation Loss":     val_loss,
-                "Validation Accuracy": val_acc,
-            })
+            wandb.log({k: v[-1] for k, v in history.items()})
 
     # Restore best checkpoint
     if best_state is not None:
