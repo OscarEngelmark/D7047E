@@ -108,7 +108,7 @@ def stratified_split(
         pct    = 100 * len(df) / total
         counts = df[label_col].value_counts().sort_index()
         dist   = "  ".join(f"{k}={v:,}" for k, v in counts.items())
-        print(f"  {name:5s}: {len(df):>7,}  ({pct:4.1f} %)  [{dist}]")
+        print(f"  {name:5s}: {len(df):>10,}  ({pct:4.1f} %)  [{dist}]")
 
     return splits
 
