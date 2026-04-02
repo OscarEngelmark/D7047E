@@ -208,6 +208,7 @@ __marimo__/
 
 # Large datasets and archives
 Lab0/data/
+Lab1/data/
 *.tar.gz
 *.zip
 
