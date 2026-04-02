@@ -200,16 +200,15 @@ def fit(
     if not log:
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
+    best_val_loss = float('inf')
+    best_state: Optional[Dict[str, torch.Tensor]] = None
+    history: Dict[str, List[float]] = {
+        "Training Loss": [], "Validation Loss": [],
+        "Training Accuracy":  [], "Validation Accuracy":  [],
+    }
+    w = len(str(num_epochs))
+
     with wandb.init(**wandb_kwargs):
-
-        best_val_loss = float('inf')
-        best_state   = None
-        history: Dict[str, List[float]] = {
-            "Training Loss": [], "Validation Loss": [],
-            "Training Accuracy":  [], "Validation Accuracy":  [],
-        }
-
-        w = len(str(num_epochs)) # Only used for printouts
 
         for epoch in range(1, num_epochs + 1):
             train_loss, train_acc = train(model, train_loader, optimizer, criterion)
