@@ -18,8 +18,7 @@ import sys, platform
 import torch
 import torch.nn as nn
 import wandb
-from torch.utils.data import DataLoader, random_split
-from torchvision.datasets import VisionDataset
+from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 
 
