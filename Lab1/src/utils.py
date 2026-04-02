@@ -3,21 +3,24 @@ utils.py — Shared training helpers.
 
 Exports
 -------
-device_check : detect and return the best available torch.device
-make_loaders : split a dataset into train/val loaders and wrap the test set
-train        : one training epoch
-validate     : one evaluation epoch
-fit          : full training loop with wandb logging and best-checkpoint restore
-evaluate     : evaluate a trained model on the test loader and print a summary
+device_check      : detect and return the best available torch.device
+stratified_split  : stratified train/val/test split for any labelled DataFrame
+make_loaders      : split a dataset into train/val loaders and wrap the test set
+train             : one training epoch
+validate          : one evaluation epoch
+fit               : full training loop with wandb logging and best-checkpoint restore
+evaluate          : evaluate a trained model on the test loader and print a summary
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+import pandas as pd
 import sys, platform
 import torch
 import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import VisionDataset
+from sklearn.model_selection import train_test_split
 
 
 def device_check() -> torch.device:
@@ -61,48 +64,54 @@ def device_check() -> torch.device:
 # Data helpers
 # ---------------------------------------------------------------------------
 
-def make_loaders(
-    train_set: VisionDataset,
-    test_set: VisionDataset,
-    loader_kwargs: Dict[str, Any],
-    val_fraction: float = 0.1,
+def stratified_split(
+    data: "pd.DataFrame",
+    label_col: str = "Class",
+    test_size: float = 0.10,
+    val_size: float = 0.10,
     seed: int = 1,
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Split `train_set` into a train and validation loader, and wrap `test_set`.
-
-    Parameters
-    ----------
-    train_set    : full training dataset (before split)
-    test_set     : held-out test dataset (never used during training)
-    loader_kwargs: kwargs forwarded to every DataLoader (e.g. batch_size,
-                   num_workers, pin_memory)
-    val_fraction : fraction of `train_set` to use for validation (default 0.1)
-    seed         : RNG seed for the split, for reproducibility
-
-    Returns
-    -------
-    train_loader, val_loader, test_loader
+) -> Dict[str, pd.DataFrame]:
+    """Split a DataFrame into stratified train / val / test subsets.
+ 
+    Performs two successive stratified splits: first carves out test_size
+    as the test set, then splits the remainder with val_size into val and
+    train. With defaults this yields an 81 / 9 / 10 split. Note that
+    val_size is a fraction of the train+val pool, not the full dataset.
+ 
+    Returns a dict with keys "train", "val", "test", each a
+    DataFrame with a reset index.
     """
-    n_val   = int(len(train_set) * val_fraction)
-    n_train = len(train_set) - n_val
 
-    train_subset, val_subset = random_split(
-        train_set,
-        [n_train, n_val],
-        generator=torch.Generator().manual_seed(seed),
+    trainval, test = train_test_split(
+        data,
+        test_size=test_size,
+        random_state=seed,
+        shuffle=True,
+        stratify=data[label_col],
+    )
+    train, val = train_test_split(
+        trainval,
+        test_size=val_size,
+        random_state=seed,
+        shuffle=True,
+        stratify=trainval[label_col],
     )
 
-    train_loader = DataLoader(train_subset, shuffle=True,  **loader_kwargs)
-    val_loader   = DataLoader(val_subset,   shuffle=False, **loader_kwargs)
-    test_loader  = DataLoader(test_set,     shuffle=False, **loader_kwargs)
+    splits = {
+        "train": train.reset_index(drop=True),
+        "val":   val.reset_index(drop=True),
+        "test":  test.reset_index(drop=True),
+    }
 
-    print(
-        f"Dataset split — train: {len(train_subset):,}  "
-        f"val: {len(val_subset):,}  "
-        f"test: {len(test_set):,}"
-    )
+    total = len(data)
+    print(f"Stratified split — total: {total:,}  |  seed={seed}")
+    for name, df in splits.items():
+        pct    = 100 * len(df) / total
+        counts = df[label_col].value_counts().sort_index()
+        dist   = "  ".join(f"{k}={v:,}" for k, v in counts.items())
+        print(f"  {name:5s}: {len(df):>7,}  ({pct:4.1f} %)  [{dist}]")
 
-    return train_loader, val_loader, test_loader
+    return splits
 
 # ---------------------------------------------------------------------------
 # Training helpers
@@ -138,7 +147,6 @@ def train(
         total        += labels.size(0)
 
     return running_loss / total, 100.0 * correct / total
-
 
 def validate(
     model: nn.Module,
