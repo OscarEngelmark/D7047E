@@ -121,10 +121,12 @@ def train(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
+    scaler=None,
 ) -> Tuple[float, float]:
     """Run one full pass over `loader` in training mode.
 
     Returns (avg_loss, accuracy_%).
+    If `scaler` is provided, uses AMP (automatic mixed precision).
     """
     device = next(model.parameters()).device
     model.train()
@@ -136,10 +138,17 @@ def train(
         inputs, labels = inputs.to(device), labels.to(device)
 
         optimizer.zero_grad()
-        outputs = model(inputs)
-        loss    = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        with torch.autocast(device_type=device.type, enabled=scaler is not None):
+            outputs = model(inputs)
+            loss    = criterion(outputs, labels)
+
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         running_loss += loss.item() * inputs.size(0)
         correct      += (outputs.argmax(dim=1) == labels).sum().item()
@@ -162,12 +171,14 @@ def validate(
     correct      = 0
     total        = 0
 
+    use_amp = device.type == 'cuda'
     with torch.no_grad():
         for inputs, labels in loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
-            outputs = model(inputs)
-            loss    = criterion(outputs, labels)
+            with torch.autocast(device_type=device.type, enabled=use_amp):
+                outputs = model(inputs)
+                loss    = criterion(outputs, labels)
 
             running_loss += loss.item() * inputs.size(0)
             correct      += (outputs.argmax(dim=1) == labels).sum().item()
@@ -224,6 +235,7 @@ def fit(
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
     model = torch.compile(model)  # type: ignore[assignment]
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None  # type: ignore[attr-defined]
 
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
@@ -248,7 +260,7 @@ def fit(
     with wandb.init(**wandb_kwargs):
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train(model, train_loader, optimizer, criterion)
+            train_loss, train_acc = train(model, train_loader, optimizer, criterion, scaler)
             val_loss,   val_acc   = validate(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
