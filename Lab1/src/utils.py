@@ -234,13 +234,14 @@ def fit(
                 best_val_loss = val_loss
                 best_state   = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
-            print(
-                f"Epoch {epoch:>{w}}/{num_epochs} | "
-                f"{train_loss:>{col_w}.4f} | "
-                f"{train_acc:>{col_w - 1}.2f}% | "
-                f"{val_loss:>{col_w}.4f} | "
-                f"{val_acc:>{col_w - 1}.2f}%"
-            )
+            if epoch <= 5 or epoch % 5 == 0: # Print the first 5 epochs, then every 5 epochs
+                print(
+                    f"Epoch {epoch:>{w}}/{num_epochs} | "
+                    f"{train_loss:>{col_w}.4f} | "
+                    f"{train_acc:>{col_w - 1}.2f}% | "
+                    f"{val_loss:>{col_w}.4f} | "
+                    f"{val_acc:>{col_w - 1}.2f}%"
+                )
 
             wandb.log({k: v[-1] for k, v in history.items()})
 
