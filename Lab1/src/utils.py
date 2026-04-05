@@ -258,9 +258,10 @@ def fit(
         f"{'Val Loss':>{col_w}} | "
         f"{'Val Acc':>{col_w}}"
     )
-    print(header)
 
     with wandb.init(**wandb_kwargs):
+
+        print(header)
 
         for epoch in range(1, num_epochs + 1):
             train_loss, train_acc = train(model, train_loader, optimizer, criterion, scaler)
