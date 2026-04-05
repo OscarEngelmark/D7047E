@@ -185,16 +185,39 @@ def fit(
     num_epochs: int,
     wandb_kwargs: Dict[str, Any],
     log: bool = True,
+    patience: Optional[int] = None,
+    min_delta: float = 1e-4,
 ) -> Dict[str, List[float]]:
-    """Train `model` for `num_epochs`, validating after every epoch.
+    """Train `model` for up to `num_epochs`, validating after every epoch.
 
     Initialises and closes a wandb run for the duration of training.
-    Saves the weights that achieved the best validation accuracy and
-    restores them at the end.
+    Saves the weights that achieved the best validation loss and restores
+    them at the end.
+
+    Prints a header row followed by one row per epoch for the first 5 epochs,
+    then every 5 epochs thereafter. If early stopping triggers on an unprinted
+    epoch, that epoch's row is printed before the stopping message.
+
+    Parameters
+    ----------
+    model        : the network to train; modified in-place
+    optimizer    : optimiser (e.g. Adam) already constructed for `model`
+    criterion    : loss function (e.g. CrossEntropyLoss)
+    train_loader : DataLoader for the training split
+    val_loader   : DataLoader for the validation split
+    num_epochs   : maximum number of epochs to train for
+    wandb_kwargs : keyword arguments forwarded to wandb.init()
+    log          : if False, disables wandb logging entirely
+    patience     : number of consecutive epochs without improvement before
+                   stopping early; None disables early stopping
+    min_delta    : minimum absolute decrease in validation loss to count as
+                   an improvement (filters out numerical noise)
 
     Returns
     -------
-    history : dict with keys 'Training Loss', 'Validation Loss', 'Training Accuracy', 'Validation Accuracy'
+    history : dict with keys 'Training Loss', 'Validation Loss',
+              'Training Accuracy', 'Validation Accuracy', each mapping to
+              a list of per-epoch values
     """
 
     if not log:
@@ -202,6 +225,7 @@ def fit(
 
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
+    epochs_no_improve = 0
     history: Dict[str, List[float]] = {
         "Training Loss": [], "Validation Loss": [],
         "Training Accuracy":  [], "Validation Accuracy":  [],
@@ -230,9 +254,12 @@ def fit(
             history["Training Accuracy"].append(train_acc)
             history["Validation Accuracy"].append(val_acc)
 
-            if val_loss < best_val_loss:
+            if val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
                 best_state   = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
 
             if epoch <= 5 or epoch % 5 == 0: # Print the first 5 epochs, then every 5 epochs
                 print(
@@ -244,6 +271,18 @@ def fit(
                 )
 
             wandb.log({k: v[-1] for k, v in history.items()})
+
+            if patience is not None and epochs_no_improve >= patience:
+                if epoch not in range(1, 6) and epoch % 5 != 0:
+                    print(
+                        f"{epoch:>{w}}/{num_epochs} | "
+                        f"{train_loss:>{col_w}.4f} | "
+                        f"{train_acc:>{col_w - 1}.2f}% | "
+                        f"{val_loss:>{col_w}.4f} | "
+                        f"{val_acc:>{col_w - 1}.2f}%"
+                    )
+                print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
+                break
 
     # Restore best checkpoint
     if best_state is not None:
