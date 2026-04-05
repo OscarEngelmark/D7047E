@@ -223,6 +223,8 @@ def fit(
     if not log:
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
+    model = torch.compile(model)  # type: ignore[assignment]
+
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
     epochs_no_improve = 0
