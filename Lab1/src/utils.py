@@ -207,6 +207,17 @@ def fit(
         "Training Accuracy":  [], "Validation Accuracy":  [],
     }
     w = len(str(num_epochs))
+    epoch_w = max(w + 1 + w, 5)  # "ep/total" width, min 5
+    col_w = 10
+
+    header = (
+        f"{'Epoch':>{epoch_w + 6}} | "
+        f"{'Train Loss':>{col_w}} | "
+        f"{'Train Acc':>{col_w}} | "
+        f"{'Val Loss':>{col_w}} | "
+        f"{'Val Acc':>{col_w}}"
+    )
+    print(header)
 
     with wandb.init(**wandb_kwargs):
 
@@ -225,8 +236,10 @@ def fit(
 
             print(
                 f"Epoch {epoch:>{w}}/{num_epochs} | "
-                f"train loss {train_loss:.4f}, train acc {train_acc:.2f}% | "
-                f"val loss {val_loss:.4f}, val acc {val_acc:.2f}%"
+                f"{train_loss:>{col_w}.4f} | "
+                f"{train_acc:>{col_w - 1}.2f}% | "
+                f"{val_loss:>{col_w}.4f} | "
+                f"{val_acc:>{col_w - 1}.2f}%"
             )
 
             wandb.log({k: v[-1] for k, v in history.items()})
