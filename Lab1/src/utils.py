@@ -234,8 +234,11 @@ def fit(
     if not log:
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
-    model = torch.compile(model)  # type: ignore[assignment]
-    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None  # type: ignore[attr-defined]
+    if torch.cuda.is_available():
+        model  = torch.compile(model)   # type: ignore[assignment]
+        scaler = torch.amp.GradScaler('cuda')  # type: ignore[attr-defined]
+    else:
+        scaler = None
 
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
