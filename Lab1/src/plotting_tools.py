@@ -18,6 +18,7 @@ def plot_confusion_matrix(
     num_classes: int,
     class_names: Optional[List[str]] = None,
     title: str = "Confusion Matrix",
+    normalize: bool = False,
 ) -> None:
     """Collect predictions from `loader` and plot a confusion matrix.
 
@@ -33,6 +34,8 @@ def plot_confusion_matrix(
     class_names : optional list of human-readable labels, e.g. ['Neg', 'Pos']
                   falls back to '0', '1', ... if not provided
     title       : plot title
+    normalize   : if True, row-normalize the matrix (recall per class);
+                  cells are annotated with percentages instead of counts
 
     Returns
     -------
@@ -52,10 +55,17 @@ def plot_confusion_matrix(
 
     cm = metric.compute()
 
+    # --- Normalise (row = actual class) ---
+    if normalize:
+        row_sums = cm.sum(dim=1, keepdim=True).clamp(min=1)
+        cm_display = (cm.float() / row_sums).cpu().numpy()
+    else:
+        cm_display = cm.cpu().numpy()
+
     # --- Plot ---
     labels_ = class_names if class_names else [str(i) for i in range(num_classes)]
     fig, ax = plt.subplots(figsize=(max(4, num_classes), max(4, num_classes)))
-    im = ax.imshow(cm.cpu().numpy(), cmap="Blues")
+    im = ax.imshow(cm_display, cmap="Blues", vmin=0, vmax=(1.0 if normalize else None))
 
     # Attach the colorbar to `ax` with a fixed fractional width so it never
     # bleeds into the title, regardless of how tall or wide the grid is.
@@ -71,13 +81,13 @@ def plot_confusion_matrix(
     # has an accurate bounding box to work with.
     ax.set_title(title, pad=10, y=1.02)
 
-    # Annotate each cell with its count
-    cm_max = cm.max().item()
+    # Annotate each cell
     for i in range(num_classes):
         for j in range(num_classes):
-            count = cm[i, j].item()
-            color = "white" if count > cm_max * 0.6 else "black"
-            ax.text(j, i, str(int(count)), ha="center", va="center", color=color)
+            val = cm_display[i, j]
+            text = f"{val:.2f}" if normalize else str(int(cm[i, j].item()))
+            color = "white" if val > (0.6 if normalize else cm_display.max() * 0.6) else "black"
+            ax.text(j, i, text, ha="center", va="center", color=color)
 
     # `rect` reserves a small top margin so the raised title is never clipped.
     plt.tight_layout(rect=(0, 0, 1, 0.97))
