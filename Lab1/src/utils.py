@@ -236,7 +236,7 @@ def fit(
 
             if epoch <= 5 or epoch % 5 == 0: # Print the first 5 epochs, then every 5 epochs
                 print(
-                    f"Epoch {epoch:>{w}}/{num_epochs} | "
+                    f"{epoch:>{w}}/{num_epochs} | "
                     f"{train_loss:>{col_w}.4f} | "
                     f"{train_acc:>{col_w - 1}.2f}% | "
                     f"{val_loss:>{col_w}.4f} | "
