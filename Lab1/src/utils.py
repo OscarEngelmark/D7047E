@@ -248,11 +248,11 @@ def fit(
         "Training Accuracy":  [], "Validation Accuracy":  [],
     }
     w = len(str(num_epochs))
-    epoch_w = max(w + 1 + w, 5)  # "ep/total" width, min 5
+    epoch_col_w = max(2 * w + 1, 5)
     col_w = 10
 
     header = (
-        f"{'Epoch':>{epoch_w + 6}} | "
+        f"{'Epoch':>{epoch_col_w}} | "
         f"{'Train Loss':>{col_w}} | "
         f"{'Train Acc':>{col_w}} | "
         f"{'Val Loss':>{col_w}} | "
@@ -280,7 +280,7 @@ def fit(
 
             if epoch <= 5 or epoch % 5 == 0: # Print the first 5 epochs, then every 5 epochs
                 print(
-                    f"{epoch:>{w}}/{num_epochs} | "
+                    f"{epoch:>{w}}/{num_epochs:>{w}} | "
                     f"{train_loss:>{col_w}.4f} | "
                     f"{train_acc:>{col_w - 1}.2f}% | "
                     f"{val_loss:>{col_w}.4f} | "
