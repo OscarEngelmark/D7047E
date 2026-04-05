@@ -128,9 +128,9 @@ def train(
     
     Uses AMP automatically when CUDA is available.
     """
-    device  = next(model.parameters()).device
-    cuda_available    = torch.cuda.is_available()
-    scaler  = torch.amp.GradScaler('cuda') if cuda else None  # type: ignore[attr-defined]
+    device = next(model.parameters()).device
+    cuda_available = torch.cuda.is_available()
+    scaler = torch.amp.GradScaler('cuda') if cuda_available else None  # type: ignore[attr-defined]
 
     running_loss = 0.0
     correct      = 0
@@ -250,7 +250,7 @@ def fit(
         "Training Loss": [], "Validation Loss": [],
         "Training Accuracy":  [], "Validation Accuracy":  [],
     }
-    
+
     w = len(str(num_epochs))
     epoch_col_w = max(2 * w + 1, 5)
     col_w = 10
