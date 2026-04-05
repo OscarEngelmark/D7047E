@@ -121,24 +121,28 @@ def train(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
-    scaler=None,
 ) -> Tuple[float, float]:
     """Run one full pass over `loader` in training mode.
 
     Returns (avg_loss, accuracy_%).
-    If `scaler` is provided, uses AMP (automatic mixed precision).
+    
+    Uses AMP automatically when CUDA is available.
     """
-    device = next(model.parameters()).device
-    model.train()
+    device  = next(model.parameters()).device
+    cuda_available    = torch.cuda.is_available()
+    scaler  = torch.amp.GradScaler('cuda') if cuda else None  # type: ignore[attr-defined]
+
     running_loss = 0.0
     correct      = 0
     total        = 0
+
+    model.train()
 
     for inputs, labels in loader:
         inputs, labels = inputs.to(device), labels.to(device)
 
         optimizer.zero_grad()
-        with torch.autocast(device_type=device.type, enabled=scaler is not None):
+        with torch.autocast(device_type=device.type, enabled=cuda_available):
             outputs = model(inputs)
             loss    = criterion(outputs, labels)
 
@@ -166,17 +170,19 @@ def validate(
     Returns (avg_loss, accuracy_%).
     """
     device = next(model.parameters()).device
-    model.eval()
+    cuda_available = device.type == 'cuda'
+    
     running_loss = 0.0
     correct      = 0
     total        = 0
 
-    use_amp = device.type == 'cuda'
+    model.eval()
+
     with torch.no_grad():
         for inputs, labels in loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
-            with torch.autocast(device_type=device.type, enabled=use_amp):
+            with torch.autocast(device_type=device.type, enabled=cuda_available):
                 outputs = model(inputs)
                 loss    = criterion(outputs, labels)
 
@@ -235,10 +241,7 @@ def fit(
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
     if torch.cuda.is_available():
-        model  = torch.compile(model)   # type: ignore[assignment]
-        scaler = torch.amp.GradScaler('cuda')  # type: ignore[attr-defined]
-    else:
-        scaler = None
+        model = torch.compile(model)   # type: ignore[assignment]
 
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
@@ -247,10 +250,10 @@ def fit(
         "Training Loss": [], "Validation Loss": [],
         "Training Accuracy":  [], "Validation Accuracy":  [],
     }
+    
     w = len(str(num_epochs))
     epoch_col_w = max(2 * w + 1, 5)
     col_w = 10
-
     header = (
         f"{'Epoch':>{epoch_col_w}} | "
         f"{'Train Loss':>{col_w}} | "
@@ -264,7 +267,7 @@ def fit(
         print(header)
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train(model, train_loader, optimizer, criterion, scaler)
+            train_loss, train_acc = train(model, train_loader, optimizer, criterion)
             val_loss,   val_acc   = validate(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
