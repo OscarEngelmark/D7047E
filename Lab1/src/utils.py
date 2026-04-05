@@ -279,7 +279,9 @@ def fit(
             else:
                 epochs_no_improve += 1
 
-            if epoch <= 5 or epoch % 5 == 0: # Print the first 5 epochs, then every 5 epochs
+            early_stop = patience is not None and epochs_no_improve >= patience
+            
+            if epoch <= 5 or epoch % 5 == 0 or early_stop:  # Print first 5, every 5th, and the stopping epoch
                 print(
                     f"{epoch:>{w}}/{num_epochs:>{w}} | "
                     f"{train_loss:>{col_w}.4f} | "
@@ -290,15 +292,7 @@ def fit(
 
             wandb.log({k: v[-1] for k, v in history.items()})
 
-            if patience is not None and epochs_no_improve >= patience:
-                if epoch not in range(1, 6) and epoch % 5 != 0:
-                    print(
-                        f"{epoch:>{w}}/{num_epochs} | "
-                        f"{train_loss:>{col_w}.4f} | "
-                        f"{train_acc:>{col_w - 1}.2f}% | "
-                        f"{val_loss:>{col_w}.4f} | "
-                        f"{val_acc:>{col_w - 1}.2f}%"
-                    )
+            if early_stop:
                 print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
                 break
 
