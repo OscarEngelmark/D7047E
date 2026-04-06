@@ -148,7 +148,6 @@ def train_bert(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
-    device: torch.device,
     scheduler: Optional[Any] = None,
 ) -> Tuple[float, float]:
     """Run one training epoch for a BERT-based classifier.
@@ -157,6 +156,7 @@ def train_bert(
     -------
     avg_loss, accuracy_%
     """
+    device = next(model.parameters()).device
     cuda_available = torch.cuda.is_available()
     scaler = torch.amp.GradScaler("cuda") if cuda_available else None  # type: ignore[attr-defined]
 
@@ -201,7 +201,6 @@ def validate_bert(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
-    device: torch.device,
 ) -> Tuple[float, float]:
     """Run one evaluation epoch for a BERT-based classifier.
 
@@ -209,6 +208,7 @@ def validate_bert(
     -------
     avg_loss, accuracy_%
     """
+    device = next(model.parameters()).device
     cuda_available = torch.cuda.is_available()
 
     running_loss = 0.0
@@ -242,7 +242,6 @@ def fit_bert(
     criterion: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    device: torch.device,
     num_epochs: int,
     wandb_kwargs: Dict[str, Any],
     scheduler: Optional[Any] = None,
@@ -287,21 +286,8 @@ def fit_bert(
         print(header)
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train_bert(
-                model=model,
-                loader=train_loader,
-                optimizer=optimizer,
-                criterion=criterion,
-                device=device,
-                scheduler=scheduler,
-            )
-
-            val_loss, val_acc = validate_bert(
-                model=model,
-                loader=val_loader,
-                criterion=criterion,
-                device=device,
-            )
+            train_loss, train_acc = train_bert(model, train_loader, optimizer, criterion, scheduler)
+            val_loss,   val_acc   = validate_bert(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
             history["Validation Loss"].append(val_loss)
@@ -343,16 +329,10 @@ def evaluate_bert(
     model: nn.Module,
     test_loader: DataLoader,
     criterion: nn.Module,
-    device: torch.device,
     label: str = "Test",
 ) -> Tuple[float, float]:
     """Evaluate a BERT-based model on the held-out test loader."""
-    test_loss, test_acc = validate_bert(
-        model=model,
-        loader=test_loader,
-        criterion=criterion,
-        device=device,
-    )
+    test_loss, test_acc = validate_bert(model, test_loader, criterion)
     print(f"[{label}] Test loss: {test_loss:.4f} | Test acc: {test_acc:.2f}%")
     return test_loss, test_acc
 
