@@ -170,7 +170,7 @@ def validate(
     Returns (avg_loss, accuracy_%).
     """
     device = next(model.parameters()).device
-    cuda_available = device.type == 'cuda'
+    cuda_available = torch.cuda.is_available()
     
     running_loss = 0.0
     correct      = 0
