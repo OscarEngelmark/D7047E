@@ -1,4 +1,4 @@
-# D7047E – Deep Learning Labs
+# D7047E – Advanced Deep Learning Labs
 
 ## Lab 0: Introduction to Deep Learning with PyTorch
 
