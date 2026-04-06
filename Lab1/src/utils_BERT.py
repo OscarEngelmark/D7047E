@@ -157,25 +157,35 @@ def train_bert(
     -------
     avg_loss, accuracy_%
     """
-    model.train()
+    cuda_available = torch.cuda.is_available()
+    scaler = torch.amp.GradScaler("cuda") if cuda_available else None  # type: ignore[attr-defined]
+
     running_loss = 0.0
     correct = 0
     total = 0
+
+    model.train()
 
     for batch in loader:
         batch = _batch_to_device(batch, device)
 
         optimizer.zero_grad()
 
-        outputs = model(
-            input_ids=batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-        )
+        with torch.autocast(device_type=device.type, enabled=cuda_available):
+            outputs = model(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+            )
+            logits = outputs.logits
+            loss = criterion(logits, batch["labels"])
 
-        logits = outputs.logits
-        loss = criterion(logits, batch["labels"])
-        loss.backward()
-        optimizer.step()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         if scheduler is not None:
             scheduler.step()
@@ -184,9 +194,7 @@ def train_bert(
         correct += (logits.argmax(dim=1) == batch["labels"]).sum().item()
         total += batch["labels"].size(0)
 
-    avg_loss = running_loss / total
-    accuracy = 100.0 * correct / total
-    return avg_loss, accuracy
+    return running_loss / total, 100.0 * correct / total
 
 
 def validate_bert(
@@ -201,30 +209,31 @@ def validate_bert(
     -------
     avg_loss, accuracy_%
     """
-    model.eval()
+    cuda_available = torch.cuda.is_available()
+
     running_loss = 0.0
     correct = 0
     total = 0
+
+    model.eval()
 
     with torch.no_grad():
         for batch in loader:
             batch = _batch_to_device(batch, device)
 
-            outputs = model(
-                input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-            )
-
-            logits = outputs.logits
-            loss = criterion(logits, batch["labels"])
+            with torch.autocast(device_type=device.type, enabled=cuda_available):
+                outputs = model(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                )
+                logits = outputs.logits
+                loss = criterion(logits, batch["labels"])
 
             running_loss += loss.item() * batch["labels"].size(0)
             correct += (logits.argmax(dim=1) == batch["labels"]).sum().item()
             total += batch["labels"].size(0)
 
-    avg_loss = running_loss / total
-    accuracy = 100.0 * correct / total
-    return avg_loss, accuracy
+    return running_loss / total, 100.0 * correct / total
 
 
 def fit_bert(
@@ -238,24 +247,44 @@ def fit_bert(
     wandb_kwargs: Dict[str, Any],
     scheduler: Optional[Any] = None,
     log: bool = True,
+    patience: Optional[int] = None,
+    min_delta: float = 1e-4,
 ) -> Dict[str, List[float]]:
     """Train a BERT-based model with validation after every epoch.
 
     The best checkpoint is selected by validation loss and restored at the end.
+    The scheduler (if provided) is stepped per batch inside train_bert, which
+    is appropriate for warmup-style BERT schedulers.
     """
     if not log:
         wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
-    with wandb.init(**wandb_kwargs):
-        best_val_loss = float("inf")
-        best_state = None
+    if torch.cuda.is_available():
+        model = torch.compile(model)  # type: ignore[assignment]
 
-        history: Dict[str, List[float]] = {
-            "train_loss": [],
-            "val_loss": [],
-            "train_acc": [],
-            "val_acc": [],
-        }
+    best_val_loss = float("inf")
+    best_state: Optional[Dict[str, torch.Tensor]] = None
+    epochs_no_improve = 0
+    history: Dict[str, List[float]] = {
+        "Training Loss": [],
+        "Validation Loss": [],
+        "Training Accuracy": [],
+        "Validation Accuracy": [],
+    }
+
+    w = len(str(num_epochs))
+    epoch_col_w = max(2 * w + 1, 5)
+    col_w = 10
+    header = (
+        f"{'Epoch':>{epoch_col_w}} | "
+        f"{'Train Loss':>{col_w}} | "
+        f"{'Train Acc':>{col_w}} | "
+        f"{'Val Loss':>{col_w}} | "
+        f"{'Val Acc':>{col_w}}"
+    )
+
+    with wandb.init(**wandb_kwargs):
+        print(header)
 
         for epoch in range(1, num_epochs + 1):
             train_loss, train_acc = train_bert(
@@ -274,27 +303,34 @@ def fit_bert(
                 device=device,
             )
 
-            history["train_loss"].append(train_loss)
-            history["val_loss"].append(val_loss)
-            history["train_acc"].append(train_acc)
-            history["val_acc"].append(val_acc)
+            history["Training Loss"].append(train_loss)
+            history["Validation Loss"].append(val_loss)
+            history["Training Accuracy"].append(train_acc)
+            history["Validation Accuracy"].append(val_acc)
 
-            if val_loss < best_val_loss:
+            if val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
 
-            print(
-                f"Epoch {epoch:>{len(str(num_epochs))}}/{num_epochs} | "
-                f"train loss {train_loss:.4f}, train acc {train_acc:.2f}% | "
-                f"val loss {val_loss:.4f}, val acc {val_acc:.2f}%"
-            )
+            early_stop = patience is not None and epochs_no_improve >= patience
 
-            wandb.log({
-                "Training Loss": train_loss,
-                "Training Accuracy": train_acc,
-                "Validation Loss": val_loss,
-                "Validation Accuracy": val_acc,
-            })
+            if epoch <= 5 or epoch % 5 == 0 or early_stop:
+                print(
+                    f"{epoch:>{w}}/{num_epochs:>{w}} | "
+                    f"{train_loss:>{col_w}.4f} | "
+                    f"{train_acc:>{col_w - 1}.2f}% | "
+                    f"{val_loss:>{col_w}.4f} | "
+                    f"{val_acc:>{col_w - 1}.2f}%"
+                )
+
+            wandb.log({k: v[-1] for k, v in history.items()})
+
+            if early_stop:
+                print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
+                break
 
     if best_state is not None:
         model.load_state_dict(best_state)
