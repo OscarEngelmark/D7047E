@@ -204,6 +204,7 @@ def fit(
     log: bool = True,
     patience: Optional[int] = None,
     min_delta: float = 1e-4,
+    scheduler=None,
 ) -> Dict[str, List[float]]:
     """Train `model` for up to `num_epochs`, validating after every epoch.
 
@@ -229,6 +230,8 @@ def fit(
                    stopping early; None disables early stopping
     min_delta    : minimum absolute decrease in validation loss to count as
                    an improvement (filters out numerical noise)
+    scheduler    : optional LR scheduler; stepped with val_loss each epoch
+                   (ReduceLROnPlateau) or without args for all other types
 
     Returns
     -------
@@ -274,6 +277,12 @@ def fit(
             history["Validation Loss"].append(val_loss)
             history["Training Accuracy"].append(train_acc)
             history["Validation Accuracy"].append(val_acc)
+
+            if scheduler is not None:
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(val_loss)
+                else:
+                    scheduler.step()
 
             if val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
