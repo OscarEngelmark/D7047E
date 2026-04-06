@@ -13,7 +13,7 @@ plot_confusion_matrix_bert : plot confusion matrix for a BERT classifier
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -361,31 +361,37 @@ def plot_confusion_matrix_bert(
     model: nn.Module,
     loader: DataLoader,
     num_classes: int,
-    device: torch.device,
     class_names: Optional[List[str]] = None,
     title: str = "Confusion Matrix",
+    normalize: bool = False,
 ) -> None:
     """Collect predictions from a BERT loader and plot a confusion matrix."""
-    metric = ConfusionMatrix(task="multiclass", num_classes=num_classes).to(device)
+    device = next(model.parameters()).device
+    task = cast(Literal["binary", "multiclass", "multilabel"],
+                "binary" if num_classes == 2 else "multiclass")
+    metric = ConfusionMatrix(task=task, num_classes=num_classes).to(device)
 
     model.eval()
     with torch.no_grad():
         for batch in loader:
             batch = _batch_to_device(batch, device)
-
-            outputs = model(
+            preds = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
-            )
-
-            preds = outputs.logits.argmax(dim=1)
+            ).logits.argmax(dim=1)
             metric.update(preds, batch["labels"])
 
     cm = metric.compute()
 
+    if normalize:
+        row_sums = cm.sum(dim=1, keepdim=True).clamp(min=1)
+        cm_display = (cm.float() / row_sums).cpu().numpy()
+    else:
+        cm_display = cm.cpu().numpy()
+
     labels_ = class_names if class_names else [str(i) for i in range(num_classes)]
     fig, ax = plt.subplots(figsize=(max(4, num_classes), max(4, num_classes)))
-    im = ax.imshow(cm.cpu().numpy(), cmap="Blues")
+    im = ax.imshow(cm_display, cmap="Blues", vmin=0, vmax=(1.0 if normalize else None))
 
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
@@ -397,12 +403,12 @@ def plot_confusion_matrix_bert(
     ax.set_ylabel("Actual")
     ax.set_title(title, pad=10, y=1.02)
 
-    cm_max = cm.max().item()
     for i in range(num_classes):
         for j in range(num_classes):
-            count = cm[i, j].item()
-            color = "white" if count > cm_max * 0.6 else "black"
-            ax.text(j, i, str(int(count)), ha="center", va="center", color=color)
+            val = cm_display[i, j]
+            text = f"{val:.2f}" if normalize else str(int(cm[i, j].item()))
+            color = "white" if val > (0.6 if normalize else cm_display.max() * 0.6) else "black"
+            ax.text(j, i, text, ha="center", va="center", color=color)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
     plt.show()
