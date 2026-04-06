@@ -37,8 +37,8 @@ class BertSentimentDataset(Dataset):
 
     def __init__(
         self,
-        texts: Sequence[str],
-        labels: Sequence[int],
+        texts: Sequence[str] | pd.Series,
+        labels: Sequence[int] | pd.Series,
         tokenizer: Any,
         max_length: int = 128,
     ) -> None:
