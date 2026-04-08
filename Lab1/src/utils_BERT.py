@@ -155,6 +155,7 @@ def train_bert(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     scheduler: Optional[Any] = None,
+    scaler: Optional[Any] = None,
 ) -> Tuple[float, float]:
     """Run one training epoch for a BERT-based classifier.
 
@@ -164,7 +165,6 @@ def train_bert(
     """
     device = next(model.parameters()).device
     cuda_available = torch.cuda.is_available()
-    scaler = torch.amp.GradScaler("cuda") if cuda_available else None  # type: ignore[attr-defined]
 
     running_loss = 0.0
     correct = 0
@@ -267,6 +267,8 @@ def fit_bert(
     if torch.cuda.is_available():
         model = torch.compile(model)  # type: ignore[assignment]
 
+    scaler = torch.amp.GradScaler("cuda") if torch.cuda.is_available() else None  # type: ignore[attr-defined]
+
     best_val_loss = float("inf")
     best_state: Optional[Dict[str, torch.Tensor]] = None
     epochs_no_improve = 0
@@ -292,7 +294,7 @@ def fit_bert(
         print(header)
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train_bert(model, train_loader, optimizer, criterion, scheduler)
+            train_loss, train_acc = train_bert(model, train_loader, optimizer, criterion, scheduler, scaler)
             val_loss,   val_acc   = validate_bert(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
