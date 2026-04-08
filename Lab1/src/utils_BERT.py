@@ -300,11 +300,11 @@ def fit_bert(
     epoch_col_w = max(2 * w + 1, 5)
     col_w = 10
     header = (
-        f"{'Epoch':>{epoch_col_w}} | "
-        f"{'Train Loss':>{col_w}} | "
-        f"{'Train Acc':>{col_w}} | "
-        f"{'Val Loss':>{col_w}} | "
-        f"{'Val Acc':>{col_w}}"
+        f"{'Epoch':<{epoch_col_w}} | "
+        f"{'Train Loss':<{col_w}} | "
+        f"{'Train Acc':<{col_w}} | "
+        f"{'Val Loss':<{col_w}} | "
+        f"{'Val Acc':<{col_w}}"
     )
 
     with wandb.init(**wandb_kwargs) as run:
