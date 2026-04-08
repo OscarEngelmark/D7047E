@@ -323,28 +323,8 @@ def validate(
 
     Returns (avg_loss, accuracy_%).
     """
-    device = next(model.parameters()).device
-    cuda_available = torch.cuda.is_available()
-    
-    running_loss = 0.0
-    correct      = 0
-    total        = 0
-
-    model.eval()
-
-    with torch.no_grad():
-        for inputs, labels in loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            with torch.autocast(device_type=device.type, enabled=cuda_available):
-                outputs = model(inputs)
-                loss    = criterion(outputs, labels)
-
-            running_loss += loss.item() * inputs.size(0)
-            correct      += (outputs.argmax(dim=1) == labels).sum().item()
-            total        += labels.size(0)
-
-    return running_loss / total, 100.0 * correct / total
+    avg_loss, accuracy, _, _ = _collect_predictions(model, loader, criterion)
+    return avg_loss, accuracy
 
 
 def fit(
@@ -466,12 +446,12 @@ def fit(
                 print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
                 break
 
-        # Restore best checkpoint while the wandb run is still open so we can
-        # log final test metrics against it.
+        # Restore best checkpoint
         if best_state is not None:
             model.load_state_dict(best_state)
             print(f"\nRestored best weights (val loss {best_val_loss:.4f})")
 
+        # Log final test metrics if test_loader provided
         if test_loader is not None:
             test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
             macro_f1    = float(f1_score(y_true, y_pred, average='macro',    zero_division=0))

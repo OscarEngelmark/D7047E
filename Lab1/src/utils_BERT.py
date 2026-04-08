@@ -254,32 +254,8 @@ def validate_bert(
     -------
     avg_loss, accuracy_%
     """
-    device = next(model.parameters()).device
-    cuda_available = torch.cuda.is_available()
-
-    running_loss = 0.0
-    correct = 0
-    total = 0
-
-    model.eval()
-
-    with torch.no_grad():
-        for batch in loader:
-            batch = _batch_to_device(batch, device)
-
-            with torch.autocast(device_type=device.type, enabled=cuda_available):
-                outputs = model(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                )
-                logits = outputs.logits
-                loss = criterion(logits, batch["labels"])
-
-            running_loss += loss.item() * batch["labels"].size(0)
-            correct += (logits.argmax(dim=1) == batch["labels"]).sum().item()
-            total += batch["labels"].size(0)
-
-    return running_loss / total, 100.0 * correct / total
+    avg_loss, accuracy, _, _ = _collect_predictions_bert(model, loader, criterion)
+    return avg_loss, accuracy
 
 
 def fit_bert(
@@ -368,12 +344,12 @@ def fit_bert(
                 print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
                 break
 
-        # Restore best checkpoint while the wandb run is still open so we can
-        # log final test metrics against it.
+        # Restore best checkpoint
         if best_state is not None:
             model.load_state_dict(best_state)
             print(f"\nRestored best weights (val loss {best_val_loss:.4f})")
 
+        # Log final test metrics if test_loader provided
         if test_loader is not None:
             test_loss, test_acc, y_true, y_pred = _collect_predictions_bert(model, test_loader, criterion)
             macro_f1    = float(f1_score(y_true, y_pred, average='macro',    zero_division=0))
