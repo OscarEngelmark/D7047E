@@ -536,7 +536,7 @@ def plot_confusion_matrix_bert(
 
     plt.tight_layout(rect=(0, 0, 1, 0.97))
 
-    plot_dir = Path("plot")
+    plot_dir = Path("../plot")
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     safe_title = title.lower().replace(" ", "_").replace("/", "_")
