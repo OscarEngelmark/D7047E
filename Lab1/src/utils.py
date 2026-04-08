@@ -12,14 +12,16 @@ fit               : full training loop with wandb logging and best-checkpoint re
 evaluate          : evaluate a trained model on the test loader and print a summary
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 import pandas as pd
+import numpy as np
 import sys, platform
 import torch
 import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, f1_score
 
 
 def device_check() -> torch.device:
@@ -160,6 +162,37 @@ def train(
 
     return running_loss / total, 100.0 * correct / total
 
+def _collect_predictions(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+) -> Tuple[float, float, np.ndarray, np.ndarray]:
+    """Run a forward pass over `loader`, returning loss, accuracy, true labels, and predictions."""
+    device = next(model.parameters()).device
+    cuda_available = torch.cuda.is_available()
+
+    running_loss = 0.0
+    all_preds: List[torch.Tensor] = []
+    all_labels: List[torch.Tensor] = []
+
+    model.eval()
+    with torch.no_grad():
+        for inputs, labels in loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            with torch.autocast(device_type=device.type, enabled=cuda_available):
+                outputs = model(inputs)
+                loss    = criterion(outputs, labels)
+            running_loss += loss.item() * inputs.size(0)
+            all_preds.append(outputs.argmax(dim=1).cpu())
+            all_labels.append(labels.cpu())
+
+    y_pred = torch.cat(all_preds).numpy()
+    y_true = torch.cat(all_labels).numpy()
+    avg_loss = running_loss / len(y_true)
+    accuracy = 100.0 * float((y_pred == y_true).sum()) / len(y_true)
+    return avg_loss, accuracy, y_true, y_pred
+
+
 def validate(
     model: nn.Module,
     loader: DataLoader,
@@ -205,6 +238,7 @@ def fit(
     patience: Optional[int] = None,
     min_delta: float = 1e-4,
     scheduler=None,
+    test_loader: Optional[DataLoader] = None,
 ) -> Dict[str, List[float]]:
     """Train `model` for up to `num_epochs`, validating after every epoch.
 
@@ -267,7 +301,7 @@ def fit(
         f"{'Val Acc':>{col_w}}"
     )
 
-    with wandb.init(**wandb_kwargs):
+    with wandb.init(**wandb_kwargs) as run:
 
         print(header)
 
@@ -310,10 +344,20 @@ def fit(
                 print(f"\nEarly stopping triggered at epoch {epoch} (no improvement for {patience} epochs)")
                 break
 
-    # Restore best checkpoint
-    if best_state is not None:
-        model.load_state_dict(best_state)
-        print(f"\nRestored best weights (val loss {best_val_loss:.4f})")
+        # Restore best checkpoint while the wandb run is still open so we can
+        # log final test metrics against it.
+        if best_state is not None:
+            model.load_state_dict(best_state)
+            print(f"\nRestored best weights (val loss {best_val_loss:.4f})")
+
+        if test_loader is not None:
+            test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
+            macro_f1    = float(f1_score(y_true, y_pred, average='macro',    zero_division=0))
+            weighted_f1 = float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
+            run.summary["test_loss"]        = test_loss
+            run.summary["test_accuracy"]    = test_acc
+            run.summary["test_macro_f1"]    = macro_f1
+            run.summary["test_weighted_f1"] = weighted_f1
 
     return history
 
@@ -322,8 +366,9 @@ def evaluate(
     test_loader: DataLoader,
     criterion: nn.Module,
     label: str = "Test",
-) -> Tuple[float, float]:
-    """Evaluate `model` on `test_loader` and print a one-line summary.
+    class_names: Optional[List[str]] = None,
+) -> Tuple[float, float, Dict[str, Any]]:
+    """Evaluate `model` on `test_loader` and print a per-class classification report.
 
     Parameters
     ----------
@@ -331,11 +376,27 @@ def evaluate(
     test_loader : DataLoader for the held-out test set
     criterion   : loss function
     label       : name printed in the summary line (e.g. the experiment name)
+    class_names : optional list of human-readable class names for the report
 
     Returns
     -------
-    (test_loss, test_acc_%)
+    (test_loss, test_acc_%, report_dict)
     """
-    test_loss, test_acc = validate(model, test_loader, criterion)
+    test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
+
     print(f"[{label}] Test loss: {test_loss:.4f} | Test acc: {test_acc:.2f}%")
-    return test_loss, test_acc
+    print(classification_report(
+        y_true, y_pred,
+        target_names=class_names,
+        digits=3,
+        zero_division=0,
+    ))
+
+    report_dict = cast(Dict[str, Any], classification_report(
+        y_true, y_pred,
+        target_names=class_names,
+        digits=3,
+        zero_division=0,
+        output_dict=True,
+    ))
+    return test_loss, test_acc, report_dict
