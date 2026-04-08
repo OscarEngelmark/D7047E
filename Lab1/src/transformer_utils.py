@@ -3,12 +3,12 @@
 Exports
 -------
 BertSentimentDataset   : Dataset wrapper that tokenizes text for BERT
-build_bert_loaders     : create train / val / test DataLoaders from DataFrames
-train_bert             : one training epoch
-validate_bert          : one evaluation epoch
-fit_bert               : full training loop with wandb logging and best-checkpoint restore
-evaluate_bert          : evaluate a trained model on the test loader and print a summary
-plot_confusion_matrix_bert : plot confusion matrix for a BERT classifier
+build_tf_loaders     : create train / val / test DataLoaders from DataFrames
+train_tf             : one training epoch
+validate_tf          : one evaluation epoch
+fit_tf               : full training loop with wandb logging and best-checkpoint restore
+evaluate_tf          : evaluate a trained model on the test loader and print a summary
+plot_confusion_matrix_tf : plot confusion matrix for a BERT classifier
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ class BertSentimentDataset(Dataset):
         }
 
 
-def build_bert_loaders(
+def build_tf_loaders(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
@@ -151,7 +151,7 @@ def _batch_to_device(batch: Dict[str, torch.Tensor], device: torch.device) -> Di
     return {key: value.to(device) for key, value in batch.items()}
 
 
-def train_bert(
+def train_tf(
     model: nn.Module,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
@@ -208,7 +208,7 @@ def train_bert(
     return running_loss / total, 100.0 * correct / total
 
 
-def _collect_predictions_bert(
+def _collect_predictions_tf(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
@@ -243,7 +243,7 @@ def _collect_predictions_bert(
     return avg_loss, accuracy, y_true, y_pred
 
 
-def validate_bert(
+def validate_tf(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
@@ -254,11 +254,11 @@ def validate_bert(
     -------
     avg_loss, accuracy_%
     """
-    avg_loss, accuracy, _, _ = _collect_predictions_bert(model, loader, criterion)
+    avg_loss, accuracy, _, _ = _collect_predictions_tf(model, loader, criterion)
     return avg_loss, accuracy
 
 
-def fit_bert(
+def fit_tf(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
@@ -275,7 +275,7 @@ def fit_bert(
     """Train a BERT-based model with validation after every epoch.
 
     The best checkpoint is selected by validation loss and restored at the end.
-    The scheduler (if provided) is stepped per batch inside train_bert, which
+    The scheduler (if provided) is stepped per batch inside train_tf, which
     is appropriate for warmup-style BERT schedulers.
     """
     if not log:
@@ -311,8 +311,8 @@ def fit_bert(
         print(header)
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train_bert(model, train_loader, optimizer, criterion, scheduler, scaler)
-            val_loss,   val_acc   = validate_bert(model, val_loader, criterion)
+            train_loss, train_acc = train_tf(model, train_loader, optimizer, criterion, scheduler, scaler)
+            val_loss,   val_acc   = validate_tf(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
             history["Validation Loss"].append(val_loss)
@@ -351,7 +351,7 @@ def fit_bert(
 
         # Log final test metrics if test_loader provided
         if test_loader is not None:
-            test_loss, test_acc, y_true, y_pred = _collect_predictions_bert(model, test_loader, criterion)
+            test_loss, test_acc, y_true, y_pred = _collect_predictions_tf(model, test_loader, criterion)
             macro_f1    = float(f1_score(y_true, y_pred, average='macro',    zero_division=0))
             weighted_f1 = float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
             run.summary["test_loss"]        = test_loss
@@ -362,7 +362,7 @@ def fit_bert(
     return history
 
 
-def save_bert_run(
+def save_tf_run(
     out_dir: str | Path,
     model: nn.Module,
     model_name: str,
@@ -371,7 +371,7 @@ def save_bert_run(
 ) -> Path:
     """Save a fine-tuned BERT-family classifier to a directory.
 
-    Stores the state_dict alongside enough metadata for `load_bert_run` to
+    Stores the state_dict alongside enough metadata for `load_tf_run` to
     rebuild the architecture and tokenizer from scratch.
     """
     out_dir = Path(out_dir)
@@ -393,7 +393,7 @@ def save_bert_run(
     return out_dir
 
 
-def load_bert_run(
+def load_tf_run(
     run_dir: str | Path,
     device: Optional[torch.device] = None,
 ) -> Tuple[nn.Module, Any, int]:
@@ -424,7 +424,7 @@ def load_bert_run(
     return model, tokenizer, ckpt["max_length"]
 
 
-def evaluate_bert(
+def evaluate_tf(
     model: nn.Module,
     test_loader: DataLoader,
     criterion: nn.Module,
@@ -436,7 +436,7 @@ def evaluate_bert(
     Prints the one-line summary followed by a per-class classification report
     and returns the report as a dict for downstream comparison.
     """
-    test_loss, test_acc, y_true, y_pred = _collect_predictions_bert(model, test_loader, criterion)
+    test_loss, test_acc, y_true, y_pred = _collect_predictions_tf(model, test_loader, criterion)
 
     print(f"Classification Report: {label}\n")
     print(classification_report(
@@ -456,7 +456,7 @@ def evaluate_bert(
     return test_loss, test_acc, report_dict
 
 
-def plot_confusion_matrix_bert(
+def plot_confusion_matrix_tf(
     model: nn.Module,
     loader: DataLoader,
     num_classes: int,
