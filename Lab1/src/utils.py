@@ -335,7 +335,6 @@ def fit(
     val_loader: DataLoader,
     num_epochs: int,
     wandb_kwargs: Dict[str, Any],
-    log: bool = True,
     patience: Optional[int] = None,
     min_delta: float = 1e-4,
     scheduler=None,
@@ -360,7 +359,6 @@ def fit(
     val_loader   : DataLoader for the validation split
     num_epochs   : maximum number of epochs to train for
     wandb_kwargs : keyword arguments forwarded to wandb.init()
-    log          : if False, disables wandb logging entirely
     patience     : number of consecutive epochs without improvement before
                    stopping early; None disables early stopping
     min_delta    : minimum absolute decrease in validation loss to count as
@@ -374,9 +372,6 @@ def fit(
               'Training Accuracy', 'Validation Accuracy', each mapping to
               a list of per-epoch values
     """
-
-    if not log:
-        wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
     if torch.cuda.is_available():
         model = torch.compile(model)   # type: ignore[assignment]

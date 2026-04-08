@@ -267,19 +267,16 @@ def fit_tf(
     num_epochs: int,
     wandb_kwargs: Dict[str, Any],
     scheduler: Optional[Any] = None,
-    log: bool = True,
     patience: Optional[int] = None,
     min_delta: float = 1e-4,
     test_loader: Optional[DataLoader] = None,
 ) -> Dict[str, List[float]]:
-    """Train a BERT-based model with validation after every epoch.
+    """Train a transformer model with validation after every epoch.
 
     The best checkpoint is selected by validation loss and restored at the end.
     The scheduler (if provided) is stepped per batch inside train_tf, which
-    is appropriate for warmup-style BERT schedulers.
+    is appropriate for warmup-style transformer schedulers.
     """
-    if not log:
-        wandb_kwargs = {**wandb_kwargs, "mode": "disabled"}
 
     if torch.cuda.is_available():
         model = torch.compile(model)  # type: ignore[assignment]
