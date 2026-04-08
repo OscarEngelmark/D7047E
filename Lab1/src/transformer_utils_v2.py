@@ -130,7 +130,7 @@ class WeightedTrainer(Trainer):
         model: nn.Module,
         inputs: Dict[str, torch.Tensor],
         return_outputs: bool = False,
-        num_items_in_batch: Optional[int] = None,
+        num_items_in_batch: "torch.Tensor | int | None" = None, # for compatibility only
     ) -> Any:
         labels = inputs.pop("labels")
         outputs = model(**inputs)
