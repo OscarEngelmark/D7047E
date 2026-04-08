@@ -121,16 +121,16 @@ def train(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
+    scaler: Optional[Any] = None,
 ) -> Tuple[float, float]:
     """Run one full pass over `loader` in training mode.
 
     Returns (avg_loss, accuracy_%).
-    
+
     Uses AMP automatically when CUDA is available.
     """
     device = next(model.parameters()).device
     cuda_available = torch.cuda.is_available()
-    scaler = torch.amp.GradScaler('cuda') if cuda_available else None  # type: ignore[attr-defined]
 
     running_loss = 0.0
     correct      = 0
@@ -246,6 +246,8 @@ def fit(
     if torch.cuda.is_available():
         model = torch.compile(model)   # type: ignore[assignment]
 
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None  # type: ignore[attr-defined]
+
     best_val_loss = float('inf')
     best_state: Optional[Dict[str, torch.Tensor]] = None
     epochs_no_improve = 0
@@ -270,7 +272,7 @@ def fit(
         print(header)
 
         for epoch in range(1, num_epochs + 1):
-            train_loss, train_acc = train(model, train_loader, optimizer, criterion)
+            train_loss, train_acc = train(model, train_loader, optimizer, criterion, scaler)
             val_loss,   val_acc   = validate(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
