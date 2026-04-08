@@ -222,3 +222,4 @@ Lab1/models/
 wandb/
 *.wandb
 runs/
+.claude/settings.local.json
