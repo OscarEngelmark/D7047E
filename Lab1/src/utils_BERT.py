@@ -22,6 +22,7 @@ import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import ConfusionMatrix
+from pathlib import Path
 
 
 class BertSentimentDataset(Dataset):
@@ -346,7 +347,6 @@ def plot_confusion_matrix_bert(
     normalize: bool = False,
 ) -> None:
     """Collect predictions from a BERT loader and plot a confusion matrix."""
-    from pathlib import Path
 
     device = next(model.parameters()).device
     task = cast(Literal["binary", "multiclass", "multilabel"],
