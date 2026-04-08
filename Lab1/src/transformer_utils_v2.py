@@ -17,7 +17,7 @@ plot_confusion_matrix_tf : confusion matrix plot from a trained Trainer
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, cast
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -153,8 +153,12 @@ def evaluate_tf(
     test_dataset: Dataset,
     label: str = "Test",
     class_names: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Run Trainer.predict on the test set and print a classification report."""
+) -> Tuple[Dict[str, Any], np.ndarray, np.ndarray]:
+    """Run Trainer.predict on the test set and print a classification report.
+
+    Returns ``(report_dict, y_true, y_pred)`` so the predictions can be
+    reused (e.g. for plotting) without a second forward pass.
+    """
     pred = trainer.predict(test_dataset, metric_key_prefix="test")
     y_true = np.asarray(pred.label_ids)
     y_pred = np.asarray(pred.predictions).argmax(axis=-1)
@@ -183,30 +187,27 @@ def evaluate_tf(
             for k, v in summary.items():
                 print(f"  {k}: {v:.4f}")
 
-    return report_dict
+    return report_dict, y_true, y_pred
 
 
 def plot_confusion_matrix_tf(
-    trainer: Trainer,
-    test_dataset: Dataset,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
     num_classes: int,
     class_names: Optional[List[str]] = None,
     title: str = "Confusion Matrix",
     normalize: bool = False,
 ) -> None:
-    """Plot a confusion matrix from Trainer.predict output."""
-    pred = trainer.predict(test_dataset)
-    y_true = torch.as_tensor(pred.label_ids, dtype=torch.long)
-    y_pred = torch.as_tensor(
-        np.asarray(pred.predictions).argmax(axis=-1), dtype=torch.long,
-    )
+    """Plot a confusion matrix from precomputed predictions."""
+    y_true_t = torch.as_tensor(np.asarray(y_true), dtype=torch.long)
+    y_pred_t = torch.as_tensor(np.asarray(y_pred), dtype=torch.long)
 
     task = cast(
         Literal["binary", "multiclass", "multilabel"],
         "binary" if num_classes == 2 else "multiclass",
     )
     metric = ConfusionMatrix(task=task, num_classes=num_classes)
-    metric.update(y_pred, y_true)
+    metric.update(y_pred_t, y_true_t)
     cm = metric.compute()
 
     if normalize:
