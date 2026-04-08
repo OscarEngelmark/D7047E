@@ -212,6 +212,9 @@ Lab1/data/
 *.tar.gz
 *.zip
 
+# Saved model artifacts
+Lab1/models/
+
 # Weights & Biases
 wandb/
 *.wandb

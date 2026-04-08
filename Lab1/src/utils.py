@@ -12,10 +12,12 @@ fit               : full training loop with wandb logging and best-checkpoint re
 evaluate          : evaluate a trained model on the test loader and print a summary
 """
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 import pandas as pd
 import numpy as np
 import sys, platform
+import joblib
 import torch
 import torch.nn as nn
 import wandb
@@ -113,6 +115,125 @@ def stratified_split(
         print(f"  {name:5s}: {len(df):>10,}  ({pct:4.1f} %)  [{dist}]")
 
     return splits
+
+# ---------------------------------------------------------------------------
+# Model definition
+# ---------------------------------------------------------------------------
+
+_ACTIVATIONS: Dict[str, type] = {
+    "relu": nn.ReLU,
+    "gelu": nn.GELU,
+    "tanh": nn.Tanh,
+    "leaky_relu": nn.LeakyReLU,
+}
+
+
+class SentimentANN(nn.Module):
+    """Feedforward classifier with BatchNorm and Dropout for sentiment analysis."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: List[int],
+        num_classes: int = 2,
+        activation: nn.Module = nn.ReLU(),
+        dropout: float = 0.3,
+    ) -> None:
+        super().__init__()
+        layers: List[nn.Module] = []
+        prev_dim = input_dim
+        for h in hidden_dims:
+            layers += [
+                nn.Linear(prev_dim, h),
+                nn.BatchNorm1d(h),
+                activation,
+                nn.Dropout(dropout),
+            ]
+            prev_dim = h
+        layers.append(nn.Linear(prev_dim, num_classes))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+# ---------------------------------------------------------------------------
+# Run persistence
+# ---------------------------------------------------------------------------
+
+def save_ann_run(
+    out_dir: str | Path,
+    model: nn.Module,
+    vectorizer: Any,
+    svd: Any,
+    input_dim: int,
+    hidden_dims: List[int],
+    num_classes: int,
+    dropout: float,
+    activation: str = "relu",
+) -> Path:
+    """Save a complete ANN pipeline (vectorizer + SVD + model) to a directory.
+
+    The resulting directory contains everything needed to reconstruct the model
+    and run inference on raw text via `load_ann_run`.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    joblib.dump(vectorizer, out_dir / "vectorizer.pkl")
+    joblib.dump(svd,        out_dir / "svd.pkl")
+
+    # Strip torch.compile wrapper if present so the state_dict keys are clean
+    state_dict = getattr(model, "_orig_mod", model).state_dict()
+
+    torch.save(
+        {
+            "state_dict":  state_dict,
+            "input_dim":   input_dim,
+            "hidden_dims": hidden_dims,
+            "num_classes": num_classes,
+            "dropout":     dropout,
+            "activation":  activation,
+        },
+        out_dir / "model.pt",
+    )
+    print(f"ANN run saved to: {out_dir}")
+    return out_dir
+
+
+def load_ann_run(
+    run_dir: str | Path,
+    device: Optional[torch.device] = None,
+) -> Tuple[SentimentANN, Any, Any]:
+    """Load a saved ANN run.
+
+    Returns
+    -------
+    (model, vectorizer, svd)
+        Model is in eval mode on `device` (or CPU if not provided).
+    """
+    run_dir = Path(run_dir)
+    if device is None:
+        device = torch.device("cpu")
+
+    vectorizer = joblib.load(run_dir / "vectorizer.pkl")
+    svd        = joblib.load(run_dir / "svd.pkl")
+
+    ckpt = torch.load(run_dir / "model.pt", map_location=device, weights_only=False)
+    activation_cls = _ACTIVATIONS.get(ckpt.get("activation", "relu"), nn.ReLU)
+
+    model = SentimentANN(
+        input_dim=ckpt["input_dim"],
+        hidden_dims=ckpt["hidden_dims"],
+        num_classes=ckpt["num_classes"],
+        activation=activation_cls(),
+        dropout=ckpt["dropout"],
+    ).to(device)
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
+
+    return model, vectorizer, svd
+
 
 # ---------------------------------------------------------------------------
 # Training helpers

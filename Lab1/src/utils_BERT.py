@@ -386,6 +386,68 @@ def fit_bert(
     return history
 
 
+def save_bert_run(
+    out_dir: str | Path,
+    model: nn.Module,
+    model_name: str,
+    num_labels: int,
+    max_length: int,
+) -> Path:
+    """Save a fine-tuned BERT-family classifier to a directory.
+
+    Stores the state_dict alongside enough metadata for `load_bert_run` to
+    rebuild the architecture and tokenizer from scratch.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Strip torch.compile wrapper if present so the state_dict keys are clean
+    state_dict = getattr(model, "_orig_mod", model).state_dict()
+
+    torch.save(
+        {
+            "state_dict": state_dict,
+            "model_name": model_name,
+            "num_labels": num_labels,
+            "max_length": max_length,
+        },
+        out_dir / "model.pt",
+    )
+    print(f"BERT run saved to: {out_dir}")
+    return out_dir
+
+
+def load_bert_run(
+    run_dir: str | Path,
+    device: Optional[torch.device] = None,
+) -> Tuple[nn.Module, Any, int]:
+    """Load a saved BERT run.
+
+    Returns
+    -------
+    (model, tokenizer, max_length)
+        Model is in eval mode on `device` (or CPU if not provided).
+    """
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    run_dir = Path(run_dir)
+    if device is None:
+        device = torch.device("cpu")
+
+    ckpt = torch.load(run_dir / "model.pt", map_location=device, weights_only=False)
+
+    tokenizer = AutoTokenizer.from_pretrained(ckpt["model_name"])
+    model = AutoModelForSequenceClassification.from_pretrained(
+        ckpt["model_name"],
+        num_labels=ckpt["num_labels"],
+    )
+    model.load_state_dict(ckpt["state_dict"])
+    model.to(device)
+    model.eval()
+
+    return model, tokenizer, ckpt["max_length"]
+
+
 def evaluate_bert(
     model: nn.Module,
     test_loader: DataLoader,
