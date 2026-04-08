@@ -487,9 +487,21 @@ def evaluate(
     test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
 
     print(f"Classification Report: {label}\n")
+    # Wide Unicode chars (e.g. ★) render as 2 columns but count as 1 character,
+    # causing sklearn's fixed-width padding to misalign columns. Pre-pad each
+    # name with spaces so all names have equal visual width.
+    def _visual_width(s: str) -> int:
+        import unicodedata
+        return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+
+    display_names = class_names
+    if class_names is not None:
+        max_vw = max(_visual_width(n) for n in class_names)
+        display_names = [" " * (max_vw - _visual_width(n)) + n for n in class_names]
+
     print(classification_report(
         y_true, y_pred,
-        target_names=class_names,
+        target_names=display_names,
         digits=3,
         zero_division=0,
     ))
