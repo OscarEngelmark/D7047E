@@ -462,7 +462,7 @@ def evaluate_bert(
     """
     test_loss, test_acc, y_true, y_pred = _collect_predictions_bert(model, test_loader, criterion)
 
-    print(f"Classification Report: {label}")
+    print(f"Classification Report: {label}\n")
     print(classification_report(
         y_true, y_pred,
         target_names=class_names,

@@ -197,7 +197,7 @@ def save_ann_run(
         },
         out_dir / "model.pt",
     )
-    print(f"ANN run saved to: {out_dir}")
+    print(f"\nANN run saved to: {out_dir}")
     return out_dir
 
 
@@ -506,7 +506,7 @@ def evaluate(
     """
     test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
 
-    print(f"Classification Report: {label}")
+    print(f"Classification Report: {label}\n")
     print(classification_report(
         y_true, y_pred,
         target_names=class_names,
