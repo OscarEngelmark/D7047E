@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -23,6 +22,12 @@ import wandb
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import ConfusionMatrix
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import matplotlib_inline.backend_inline as _backend_inline
+
+# Render inline plots as SVG so all edges stay crisp regardless of screen DPI.
+_backend_inline.set_matplotlib_formats("svg")
 
 
 class BertSentimentDataset(Dataset):
