@@ -346,6 +346,8 @@ def plot_confusion_matrix_bert(
     normalize: bool = False,
 ) -> None:
     """Collect predictions from a BERT loader and plot a confusion matrix."""
+    from pathlib import Path
+
     device = next(model.parameters()).device
     task = cast(Literal["binary", "multiclass", "multilabel"],
                 "binary" if num_classes == 2 else "multiclass")
@@ -391,4 +393,13 @@ def plot_confusion_matrix_bert(
             ax.text(j, i, text, ha="center", va="center", color=color)
 
     plt.tight_layout(rect=(0, 0, 1, 0.97))
+
+    plot_dir = Path("plot")
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_title = title.lower().replace(" ", "_").replace("/", "_")
+    suffix = "_normalized" if normalize else ""
+    save_path = plot_dir / f"{safe_title}{suffix}.png"
+
+    plt.savefig(save_path, format="png", dpi=300, bbox_inches="tight")
     plt.show()
