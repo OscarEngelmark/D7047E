@@ -330,8 +330,9 @@ def fit(
             early_stop = patience is not None and epochs_no_improve >= patience
             
             if epoch <= 5 or epoch % 5 == 0 or early_stop:  # Print first 5, every 5th, and the stopping epoch
+                epoch_str = f"{epoch:>{w}}/{num_epochs:>{w}}"
                 print(
-                    f"{epoch:>{w}}/{num_epochs:>{w}} | "
+                    f"{epoch_str:>{epoch_col_w}} | "
                     f"{train_loss:>{col_w}.4f} | "
                     f"{train_acc:>{col_w - 1}.2f}% | "
                     f"{val_loss:>{col_w}.4f} | "
