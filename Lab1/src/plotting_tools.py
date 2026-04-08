@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Optional, Literal, cast
 
 import torch
@@ -91,4 +92,13 @@ def plot_confusion_matrix(
 
     # `rect` reserves a small top margin so the raised title is never clipped.
     plt.tight_layout(rect=(0, 0, 1, 0.97))
+
+    plot_dir = Path("plot")
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_title = title.lower().replace(" ", "_").replace("/", "_")
+    suffix = "_normalized" if normalize else ""
+    save_path = plot_dir / f"{safe_title}{suffix}.png"
+
+    plt.savefig(save_path, format="png", dpi=300, bbox_inches="tight")
     plt.show()
