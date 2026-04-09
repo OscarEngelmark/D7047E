@@ -346,10 +346,6 @@ def fit(
     Saves the weights that achieved the best validation loss and restores
     them at the end.
 
-    Prints a header row followed by one row per epoch for the first 5 epochs,
-    then every 5 epochs thereafter. If early stopping triggers on an unprinted
-    epoch, that epoch's row is printed before the stopping message.
-
     Parameters
     ----------
     model        : the network to train; modified in-place
