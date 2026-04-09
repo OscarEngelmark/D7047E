@@ -10,4 +10,4 @@ scikit-learn
 nltk
 ipywidgets
 transformers[torch]
-opencv-python
+opencv-python-headless
