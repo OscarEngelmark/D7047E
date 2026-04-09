@@ -209,8 +209,12 @@ __marimo__/
 # Large datasets and archives
 Lab0/data/
 Lab1/data/
+Project/data/
 *.tar.gz
 *.zip
+
+# Documentation
+Project/docs/
 
 # Plots
 Lab1/plot/
