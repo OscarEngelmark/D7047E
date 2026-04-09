@@ -227,3 +227,6 @@ wandb/
 *.wandb
 runs/
 .claude/settings.local.json
+
+# Visual Studio Code launch configurations
+.vscode/launch.json
