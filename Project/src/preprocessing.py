@@ -4,8 +4,8 @@ and convert CVAT XML annotations to YOLO OBB format.
 
 Output structure:
   data/processed/
-    images/   - JPEG frames that have at least one annotation
-    labels/   - YOLO OBB .txt files (class cx cy w h angle, normalised)
+    images/{train,val,test}/   - JPEG frames that have at least one annotation
+    labels/{train,val,test}/   - YOLO OBB .txt files (class cx cy w h angle, normalised)
     dataset.yaml
 """
 
@@ -18,13 +18,14 @@ import numpy as np
 import yaml
 from globals import *
 
-ZIPS = [
-    "2022-12-02 Asjo 01_stabilized.zip",
-    "2022-12-03 Nyland 01_stabilized.zip",
-    "2022-12-04 Bjenberg 02.zip",
-    "2022-12-23 Asjo 01_HD 5x stab.zip",
-    "2022-12-23 Bjenberg 02_stabilized.zip",
-]
+# Explicit per-source split assignment
+SPLIT_MAP: dict[str, str] = {
+    "2022-12-02 Asjo 01_stabilized.zip":      "train",
+    "2022-12-04 Bjenberg 02.zip":             "train",
+    "2022-12-23 Asjo 01_HD 5x stab.zip":      "train",
+    "2022-12-03 Nyland 01_stabilized.zip":    "val",
+    "2022-12-23 Bjenberg 02_stabilized.zip":  "test",
+}
 
 JPEG_QUALITY = 95   # saved frame quality
 
@@ -88,7 +89,14 @@ def frame_stem(zip_stem: str, frame_id: int) -> str:
 
 # ── per-zip extractors ────────────────────────────────────────────────────────
 
-def process_video_zip(zf: zipfile.ZipFile, video_name: str, xml_name: str, zip_stem: str) -> int:
+def process_video_zip(
+    zf: zipfile.ZipFile,
+    video_name: str,
+    xml_name: str,
+    zip_stem: str,
+    img_dir: Path,
+    lbl_dir: Path,
+) -> int:
     """Extract annotated frames from a zip that contains a video file."""
     print(f"  Parsing annotations from {xml_name} …")
     annotations, _, _ = parse_annotations(zf.read(xml_name))
@@ -96,9 +104,8 @@ def process_video_zip(zf: zipfile.ZipFile, video_name: str, xml_name: str, zip_s
     print(f"  {len(annotated_frames)} annotated frames found")
 
     print(f"  Extracting video {video_name} to memory …")
-    video_bytes = zf.read(video_name)
     tmp_path = OUT_DIR / "_tmp_video"
-    tmp_path.write_bytes(video_bytes)
+    tmp_path.write_bytes(zf.read(video_name))
 
     cap = cv2.VideoCapture(str(tmp_path))
     if not cap.isOpened():
@@ -112,10 +119,8 @@ def process_video_zip(zf: zipfile.ZipFile, video_name: str, xml_name: str, zip_s
             break
         if frame_id in annotated_frames:
             stem  = frame_stem(zip_stem, frame_id)
-            img_p = IMG_DIR / f"{stem}.jpg"
-            lbl_p = LBL_DIR / f"{stem}.txt"
-            cv2.imwrite(str(img_p), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-            save_label(lbl_p, annotations[frame_id])
+            cv2.imwrite(str(img_dir / f"{stem}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+            save_label(lbl_dir / f"{stem}.txt", annotations[frame_id])
             saved += 1
         frame_id += 1
 
@@ -124,7 +129,13 @@ def process_video_zip(zf: zipfile.ZipFile, video_name: str, xml_name: str, zip_s
     return saved
 
 
-def process_frames_zip(zf: zipfile.ZipFile, xml_name: str, zip_stem: str) -> int:
+def process_frames_zip(
+    zf: zipfile.ZipFile,
+    xml_name: str,
+    zip_stem: str,
+    img_dir: Path,
+    lbl_dir: Path,
+) -> int:
     """Extract annotated frames from a zip that already contains PNG frames."""
     print(f"  Parsing annotations from {xml_name} …")
     annotations, _, _ = parse_annotations(zf.read(xml_name))
@@ -136,24 +147,20 @@ def process_frames_zip(zf: zipfile.ZipFile, xml_name: str, zip_stem: str) -> int
     saved = 0
     for png_name in png_names:
         # frame index encoded in filename: frame_000080.PNG → 80
-        fname = Path(png_name).stem          # e.g. "frame_000080"
-        frame_id = int(fname.split("_")[-1])
+        frame_id = int(Path(png_name).stem.split("_")[-1])
 
         if frame_id not in annotated_frames:
             continue
 
-        img_bytes = zf.read(png_name)
-        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        arr = np.frombuffer(zf.read(png_name), dtype=np.uint8)
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame is None:
             print(f"  Warning: could not decode {png_name}, skipping")
             continue
 
-        stem  = frame_stem(zip_stem, frame_id)
-        img_p = IMG_DIR / f"{stem}.jpg"
-        lbl_p = LBL_DIR / f"{stem}.txt"
-        cv2.imwrite(str(img_p), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-        save_label(lbl_p, annotations[frame_id])
+        stem = frame_stem(zip_stem, frame_id)
+        cv2.imwrite(str(img_dir / f"{stem}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        save_label(lbl_dir / f"{stem}.txt", annotations[frame_id])
         saved += 1
 
     return saved
@@ -162,20 +169,26 @@ def process_frames_zip(zf: zipfile.ZipFile, xml_name: str, zip_stem: str) -> int
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # create split subdirectories
+    for split in ("train", "val", "test"):
+        (OUT_DIR / "images" / split).mkdir(parents=True, exist_ok=True)
+        (OUT_DIR / "labels" / split).mkdir(parents=True, exist_ok=True)
 
     total_saved = 0
 
-    for zip_name in ZIPS:
+    for zip_name, split in SPLIT_MAP.items():
         zip_path = DATA_DIR / zip_name
         if not zip_path.exists():
             print(f"[SKIP] {zip_name} not found")
             continue
 
-        print(f"\n[{zip_name}]")
+        print(f"\n[{split}] {zip_name}")
         zip_stem = Path(zip_name).stem
+        img_dir  = OUT_DIR / "images" / split
+        lbl_dir  = OUT_DIR / "labels" / split
 
         with zipfile.ZipFile(zip_path) as zf:
-            members = zf.namelist()
+            members     = zf.namelist()
             xml_files   = [n for n in members if n.endswith(".xml")]
             video_files = [n for n in members if n.lower().endswith((".mp4", ".avi", ".mov"))]
             png_files   = [n for n in members if n.lower().endswith(".png")]
@@ -183,24 +196,24 @@ def main() -> None:
             if not xml_files:
                 print("  No XML found, skipping")
                 continue
-            xml_name = xml_files[0]
 
             if video_files:
-                saved = process_video_zip(zf, video_files[0], xml_name, zip_stem)
+                saved = process_video_zip(zf, video_files[0], xml_files[0], zip_stem, img_dir, lbl_dir)
             elif png_files:
-                saved = process_frames_zip(zf, xml_name, zip_stem)
+                saved = process_frames_zip(zf, xml_files[0], zip_stem, img_dir, lbl_dir)
             else:
                 print("  No video or PNG frames found, skipping")
                 continue
 
-        print(f"  Saved {saved} frames")
+        print(f"  Saved {saved} frames → {split}")
         total_saved += saved
 
     # write dataset.yaml for YOLOv9
     dataset_yaml = {
         "path": str(OUT_DIR.resolve()),
-        "train": "images",
-        "val":   "images",   # split later as needed
+        "train": "images/train",
+        "val":   "images/val",
+        "test":  "images/test",
         "nc":    1,
         "names": {0: "car"},
     }
