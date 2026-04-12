@@ -7,7 +7,7 @@ device_check      : detect and return the best available torch.device
 stratified_split  : stratified train/val/test split for any labelled DataFrame
 make_loaders      : split a dataset into train/val loaders and wrap the test set
 train             : one training epoch
-validate          : one evaluation epoch
+validate          : run evaluation over a loader, returning loss, accuracy, labels, and predictions
 fit               : full training loop with wandb logging and best-checkpoint restore
 evaluate          : evaluate a trained model on the test loader and print a summary
 """
@@ -283,12 +283,15 @@ def train(
 
     return running_loss / total, 100.0 * correct / total
 
-def _collect_predictions(
+def validate(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
-    """Run a forward pass over `loader`, returning loss, accuracy, true labels, and predictions."""
+    """Run a forward pass over `loader` in evaluation mode.
+
+    Returns (avg_loss, accuracy_%, y_true, y_pred).
+    """
     device = next(model.parameters()).device
     cuda_available = torch.cuda.is_available()
 
@@ -311,20 +314,8 @@ def _collect_predictions(
     y_true = torch.cat(all_labels).numpy()
     avg_loss = running_loss / len(y_true)
     accuracy = 100.0 * float((y_pred == y_true).sum()) / len(y_true)
+    
     return avg_loss, accuracy, y_true, y_pred
-
-
-def validate(
-    model: nn.Module,
-    loader: DataLoader,
-    criterion: nn.Module,
-) -> Tuple[float, float]:
-    """Run one full pass over `loader` in evaluation mode.
-
-    Returns (avg_loss, accuracy_%).
-    """
-    avg_loss, accuracy, _, _ = _collect_predictions(model, loader, criterion)
-    return avg_loss, accuracy
 
 
 def fit(
@@ -399,7 +390,7 @@ def fit(
 
         for epoch in range(1, num_epochs + 1):
             train_loss, train_acc = train(model, train_loader, optimizer, criterion, scaler)
-            val_loss,   val_acc   = validate(model, val_loader, criterion)
+            val_loss,   val_acc, _, _ = validate(model, val_loader, criterion)
 
             history["Training Loss"].append(train_loss)
             history["Validation Loss"].append(val_loss)
@@ -444,7 +435,7 @@ def fit(
 
         # Log final test metrics if test_loader provided
         if test_loader is not None:
-            test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
+            test_loss, test_acc, y_true, y_pred = validate(model, test_loader, criterion)
             macro_f1    = float(f1_score(y_true, y_pred, average='macro',    zero_division=0))
             weighted_f1 = float(f1_score(y_true, y_pred, average='weighted', zero_division=0))
             run.summary["test_loss"]        = test_loss
@@ -475,7 +466,7 @@ def evaluate(
     -------
     (test_loss, test_acc_%, report_dict)
     """
-    test_loss, test_acc, y_true, y_pred = _collect_predictions(model, test_loader, criterion)
+    test_loss, test_acc, y_true, y_pred = validate(model, test_loader, criterion)
 
     print(f"Classification Report: {label}\n")
 
