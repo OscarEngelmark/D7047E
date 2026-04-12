@@ -314,7 +314,7 @@ def validate(
     y_true = torch.cat(all_labels).numpy()
     avg_loss = running_loss / len(y_true)
     accuracy = 100.0 * float((y_pred == y_true).sum()) / len(y_true)
-    
+
     return avg_loss, accuracy, y_true, y_pred
 
 
@@ -415,11 +415,11 @@ def fit(
             if epoch <= 5 or epoch % 5 == 0 or early_stop:  # Print first 5, every 5th, and the stopping epoch
                 epoch_str = f"{epoch:>{w}}/{num_epochs:>{w}}"
                 print(
-                    f"{epoch_str:>{epoch_col_w}} | "
-                    f"{train_loss:>{col_w}.4f} | "
-                    f"{train_acc:>{col_w - 1}.2f}% | "
-                    f"{val_loss:>{col_w}.4f} | "
-                    f"{val_acc:>{col_w - 1}.2f}%"
+                    f"{epoch_str:<{epoch_col_w}} | "
+                    f"{train_loss:<{col_w}.4f} | "
+                    f"{train_acc:<{col_w - 1}.2f}% | "
+                    f"{val_loss:<{col_w}.4f} | "
+                    f"{val_acc:<{col_w - 1}.2f}%"
                 )
 
             wandb.log({k: v[-1] for k, v in history.items()})
