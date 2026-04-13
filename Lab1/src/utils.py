@@ -3,16 +3,21 @@ utils.py — Shared training helpers.
 
 Exports
 -------
-device_check      : detect and return the best available torch.device
-stratified_split  : stratified train/val/test split for any labelled DataFrame
-make_loaders      : split a dataset into train/val loaders and wrap the test set
-train             : one training epoch
-validate          : run evaluation over a loader, returning loss, accuracy, labels, and predictions
-fit               : full training loop with wandb logging and best-checkpoint restore
+device_check          : detect and return the best available torch.device
+stratified_split      : stratified train/val/test split for any labelled DataFrame
+make_loaders          : split a dataset into train/val loaders and wrap the test set
+train                 : one training epoch
+validate              : run evaluation over a loader, returning loss, accuracy, labels, and predictions
+fit                   : full training loop with wandb logging and best-checkpoint restore
 evaluate              : evaluate a trained model on the test loader and print a summary
 plot_confusion_matrix : plot (and save) a confusion matrix for a model and loader
+Vocabulary            : token-to-ID mapping built from a corpus, with padding/OOV support
+SentimentBiLSTM       : bidirectional LSTM classifier for sequence-based sentiment analysis
+save_bilstm_run       : persist a complete BiLSTM pipeline (vocab + model weights) to disk
+load_bilstm_run       : restore a saved BiLSTM pipeline from disk
 """
 
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 import pandas as pd
@@ -240,6 +245,202 @@ def load_ann_run(
     model.eval()
 
     return model, vectorizer, svd
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary (for sequence models such as BiLSTM)
+# ---------------------------------------------------------------------------
+
+class Vocabulary:
+    """Map tokens to integer IDs for use with an embedding layer.
+
+    Special tokens
+    --------------
+    Index 0 — ``<PAD>`` : padding (ignored by the embedding layer)
+    Index 1 — ``<UNK>`` : any token not seen during training
+
+    Usage
+    -----
+    >>> vocab = Vocabulary().build(train_texts, min_freq=2)
+    >>> ids   = vocab.encode("great product", max_len=32)
+    """
+
+    PAD_TOKEN = "<PAD>"
+    UNK_TOKEN = "<UNK>"
+
+    def __init__(self) -> None:
+        self.token2id: Dict[str, int] = {self.PAD_TOKEN: 0, self.UNK_TOKEN: 1}
+        self.id2token: Dict[int, str] = {0: self.PAD_TOKEN, 1: self.UNK_TOKEN}
+        self._next_id = 2
+
+    def build(self, texts: List[str], min_freq: int = 1) -> "Vocabulary":
+        """Populate the vocabulary from a list of whitespace-tokenized strings.
+
+        Parameters
+        ----------
+        texts    : iterable of pre-tokenized sentences (one string per sample)
+        min_freq : tokens appearing fewer than this many times are excluded
+        """
+        counts: Counter = Counter(tok for text in texts for tok in text.split())
+        for token, freq in sorted(counts.items()):
+            if freq >= min_freq:
+                self.token2id[token] = self._next_id
+                self.id2token[self._next_id] = token
+                self._next_id += 1
+        print(f"Vocabulary built — {len(self):,} tokens  (min_freq={min_freq})")
+        return self
+
+    def encode(self, text: str, max_len: int) -> List[int]:
+        """Encode a single string to a zero-padded list of token IDs.
+
+        Sequences longer than ``max_len`` are truncated; shorter ones are
+        right-padded with the ``<PAD>`` index (0).
+        """
+        tokens = text.split()[:max_len]
+        ids    = [self.token2id.get(t, 1) for t in tokens]  # 1 = <UNK>
+        ids   += [0] * (max_len - len(ids))                  # 0 = <PAD>
+        return ids
+
+    def __len__(self) -> int:
+        return len(self.token2id)
+
+
+# ---------------------------------------------------------------------------
+# BiLSTM model definition
+# ---------------------------------------------------------------------------
+
+class SentimentBiLSTM(nn.Module):
+    """Bidirectional LSTM classifier for sentiment analysis.
+
+    Architecture
+    ------------
+    Embedding  →  BiLSTM (N layers)  →  mean-pool over non-pad tokens  →  Dropout  →  Linear
+
+    All non-padding hidden states are averaged to form a ``2 * hidden_dim``
+    representation. This is more robust than using only the final hidden state
+    on short or noisy text, because every token contributes to the output.
+
+    Parameters
+    ----------
+    pool : ``"mean"`` (default) or ``"last"``
+        Pooling strategy over the LSTM output sequence.
+        - ``"mean"`` — masked mean-pool, ignoring ``<PAD>`` positions.
+        - ``"last"`` — concatenate the final forward and backward hidden states.
+    """
+
+    def __init__(
+        self,
+        vocab_size: int,
+        embed_dim: int,
+        hidden_dim: int,
+        num_classes: int = 2,
+        num_layers: int = 1,
+        dropout: float = 0.3,
+        pad_idx: int = 0,
+        pool: str = "mean",
+    ) -> None:
+        super().__init__()
+        self.pad_idx = pad_idx
+        self.pool    = pool
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=pad_idx)
+        # Inter-layer dropout only applies when num_layers > 1
+        lstm_dropout = dropout if num_layers > 1 else 0.0
+        self.lstm = nn.LSTM(
+            embed_dim,
+            hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=lstm_dropout,
+        )
+        self.dropout = nn.Dropout(dropout)
+        self.fc = nn.Linear(2 * hidden_dim, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (batch, seq_len) — integer token IDs
+        embedded = self.dropout(self.embedding(x))    # (batch, seq_len, embed_dim)
+        output, (hidden, _) = self.lstm(embedded)     # output: (batch, seq_len, 2*hidden_dim)
+
+        if self.pool == "mean":
+            # Build a mask over real (non-padding) positions and mean-pool
+            mask = (x != self.pad_idx).unsqueeze(-1).float()  # (batch, seq_len, 1)
+            out  = (output * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+        else:
+            # Last hidden state: index -2 (forward), -1 (backward)
+            out = torch.cat([hidden[-2], hidden[-1]], dim=1)  # (batch, 2*hidden_dim)
+
+        return self.fc(self.dropout(out))
+
+
+# ---------------------------------------------------------------------------
+# BiLSTM run persistence
+# ---------------------------------------------------------------------------
+
+def save_bilstm_run(
+    out_dir: str | Path,
+    model: nn.Module,
+    vocab: Vocabulary,
+    max_seq_len: int,
+    embed_dim: int,
+    hidden_dim: int,
+    num_layers: int,
+    num_classes: int,
+    dropout: float,
+) -> Path:
+    """Save a complete BiLSTM pipeline (vocabulary + model weights) to a directory."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    joblib.dump(vocab, out_dir / "vocab.pkl")
+
+    state_dict = getattr(model, "_orig_mod", model).state_dict()
+    torch.save(
+        {
+            "state_dict":  state_dict,
+            "vocab_size":  len(vocab),
+            "embed_dim":   embed_dim,
+            "hidden_dim":  hidden_dim,
+            "num_layers":  num_layers,
+            "num_classes": num_classes,
+            "dropout":     dropout,
+            "max_seq_len": max_seq_len,
+        },
+        out_dir / "model.pt",
+    )
+    print(f"\nBiLSTM run saved to: {out_dir}")
+    return out_dir
+
+
+def load_bilstm_run(
+    run_dir: str | Path,
+    device: Optional[torch.device] = None,
+) -> Tuple["SentimentBiLSTM", Vocabulary, int]:
+    """Load a saved BiLSTM run.
+
+    Returns
+    -------
+    (model, vocab, max_seq_len)
+        Model is in eval mode on ``device`` (or CPU if not provided).
+    """
+    run_dir = Path(run_dir)
+    if device is None:
+        device = torch.device("cpu")
+
+    vocab: Vocabulary = joblib.load(run_dir / "vocab.pkl")
+    ckpt  = torch.load(run_dir / "model.pt", map_location=device, weights_only=False)
+
+    model = SentimentBiLSTM(
+        vocab_size  = ckpt["vocab_size"],
+        embed_dim   = ckpt["embed_dim"],
+        hidden_dim  = ckpt["hidden_dim"],
+        num_layers  = ckpt["num_layers"],
+        num_classes = ckpt["num_classes"],
+        dropout     = ckpt["dropout"],
+    ).to(device)
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
+
+    return model, vocab, ckpt["max_seq_len"]
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +742,7 @@ def plot_confusion_matrix(
 
     cm = metric.compute()
 
-    # --- Normalise (row = actual class) ---
+    # --- Normalize (row = actual class) ---
     if normalize:
         row_sums = cm.sum(dim=1, keepdim=True).clamp(min=1)
         cm_display = (cm.float() / row_sums).cpu().numpy()
