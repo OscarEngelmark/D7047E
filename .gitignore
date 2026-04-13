@@ -226,6 +226,8 @@ Lab1/models/
 wandb/
 *.wandb
 runs/
+
+# Claude
 .claude/settings.local.json
 
 # Visual Studio Code launch configurations
