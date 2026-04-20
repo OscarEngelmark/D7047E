@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 
 def device_check() -> torch.device:
@@ -40,34 +41,13 @@ def device_check() -> torch.device:
     return device
 
 
-def show_generated_images(
-    generator: torch.nn.Module,
-    latent_dim: int,
-    device: torch.device,
-    num_images: int = 16,
-) -> None:
-    """Sample from generator and display a grid in the notebook."""
-    generator.eval()
-    with torch.no_grad():
-        z = torch.randn(num_images, latent_dim, device=device)
-        fake_images = generator(z).view(-1, 28, 28).cpu().numpy()
-
-    fig, axes = plt.subplots(4, 4, figsize=(6, 6))
-    for i, ax in enumerate(axes.flat):
-        ax.imshow(fake_images[i], cmap="gray")
-        ax.axis("off")
-    plt.tight_layout()
-    plt.show()
-    generator.train()
-
-
 def make_generated_figure(
     generator: torch.nn.Module,
     latent_dim: int,
     device: torch.device,
     num_images: int = 16,
-) -> plt.Figure:
-    """Sample from generator and return a matplotlib figure for W&B logging."""
+) -> Figure:
+    """Sample from generator and return a matplotlib figure."""
     generator.eval()
     with torch.no_grad():
         z = torch.randn(num_images, latent_dim, device=device)
@@ -82,6 +62,18 @@ def make_generated_figure(
     return fig
 
 
+def show_generated_images(
+    generator: torch.nn.Module,
+    latent_dim: int,
+    device: torch.device,
+    num_images: int = 16,
+) -> None:
+    """Sample from generator and display a grid in the notebook."""
+    fig = make_generated_figure(generator, latent_dim, device, num_images)
+    plt.show()
+    plt.close(fig)
+
+
 def save_generated_grid(
     generator: torch.nn.Module,
     latent_dim: int,
@@ -90,19 +82,9 @@ def save_generated_grid(
     num_images: int = 16,
 ) -> None:
     """Sample from generator and save a grid image to disk."""
-    generator.eval()
-    with torch.no_grad():
-        z = torch.randn(num_images, latent_dim, device=device)
-        fake_images = generator(z).view(-1, 28, 28).cpu().numpy()
-
-    fig, axes = plt.subplots(4, 4, figsize=(6, 6))
-    for i, ax in enumerate(axes.flat):
-        ax.imshow(fake_images[i], cmap="gray")
-        ax.axis("off")
-    plt.tight_layout()
+    fig = make_generated_figure(generator, latent_dim, device, num_images)
     plt.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
-    generator.train()
 
 
 def build_model_name(config: dict, task_name: str = "task1", file_ext: str = "pt") -> str:
