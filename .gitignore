@@ -207,9 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # Large datasets and archives
-Lab0/data/
-Lab1/data/
-Project/data/
+data/
 *.tar.gz
 *.zip
 
@@ -218,9 +216,11 @@ Project/docs/
 
 # Plots
 Lab1/plot/
+Lab2/out/
 
 # Saved model artifacts
-Lab1/models/
+models/
+*.pt
 
 # Weights & Biases
 wandb/
