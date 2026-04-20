@@ -6,5 +6,8 @@ OUT_DIR     = PROJECT_DIR / "out"
 MODELS_DIR  = PROJECT_DIR / "Models"
 WANDB_DIR   = PROJECT_DIR
 
+for p in [OUT_DIR, MODELS_DIR, WANDB_DIR]:
+    p.mkdir(parents=True, exist_ok=True)
+
 WANDB_ENTITY  = "d7047e-group12"
 WANDB_PROJECT = "Lab2"
