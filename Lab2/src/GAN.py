@@ -11,32 +11,16 @@ import tqdm
 import os
 import wandb
 
-
-# Hyperparameters
-mb_size = 64
-Z_dim = 1000
-h_dim = 128
-lr = 1e-3
-
-# Load MNIST data
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Lambda(lambda x: x.view(-1))  # Flatten the 28x28 image to 784
-])
-
-train_dataset = datasets.MNIST(root='../MNIST', train=True, transform=transform, download=True)
-train_loader = DataLoader(train_dataset, batch_size=mb_size, shuffle=True)
-
 X_dim = 784  # 28 x 28
 
-# Xavier Initialization
+
 def xavier_init(m):
     if isinstance(m, nn.Linear):
         nn.init.xavier_normal_(m.weight)
         if m.bias is not None:
             nn.init.zeros_(m.bias)
 
-# Generator
+
 class Generator(nn.Module):
     def __init__(self, z_dim, h_dim, x_dim):
         super(Generator, self).__init__()
@@ -49,7 +33,7 @@ class Generator(nn.Module):
         out = torch.sigmoid(self.fc2(h))
         return out
 
-# Discriminator
+
 class Discriminator(nn.Module):
     def __init__(self, x_dim, h_dim):
         super(Discriminator, self).__init__()
@@ -63,9 +47,7 @@ class Discriminator(nn.Module):
         return out
 
 
-
-# Training
-def cGANTraining(G, D, loss_fn, train_loader):
+def cGANTraining(G, D, loss_fn, train_loader, G_solver, D_solver, z_dim, device):
     G.train()
     D.train()
 
@@ -73,13 +55,11 @@ def cGANTraining(G, D, loss_fn, train_loader):
     D_loss_fake_total = 0
     G_loss_total = 0
     t = tqdm.tqdm(train_loader)
-    
+
     for it, (X_real, labels) in enumerate(t):
-        # Prepare real data
         X_real = X_real.float().to(device)
 
-        # Sample noise and labels
-        z = torch.randn(X_real.size(0), Z_dim).to(device)
+        z = torch.randn(X_real.size(0), z_dim).to(device)
         ones_label = torch.ones(X_real.size(0), 1).to(device)
         zeros_label = torch.zeros(X_real.size(0), 1).to(device)
 
@@ -99,7 +79,7 @@ def cGANTraining(G, D, loss_fn, train_loader):
         D_solver.step()
 
         # ================= Train Generator ====================
-        z = torch.randn(X_real.size(0), Z_dim).to(device)
+        z = torch.randn(X_real.size(0), z_dim).to(device)
         G_sample = G(z)
         D_fake = D(G_sample)
 
@@ -110,7 +90,6 @@ def cGANTraining(G, D, loss_fn, train_loader):
         G_loss.backward()
         G_solver.step()
 
-    # ================= Logging =================
     D_loss_real_avg = D_loss_real_total / len(train_loader)
     D_loss_fake_avg = D_loss_fake_total / len(train_loader)
     D_loss_avg = D_loss_real_avg + D_loss_fake_avg
@@ -124,14 +103,13 @@ def cGANTraining(G, D, loss_fn, train_loader):
     })
 
     return G, D, G_loss_avg, D_loss_avg
-    
 
 
-def save_sample(G, epoch, mb_size, Z_dim):
+def save_sample(G, epoch, mb_size, z_dim, device):
     out_dir = "out_vanila_GAN2"
     G.eval()
     with torch.no_grad():
-        z = torch.randn(mb_size, Z_dim).to(device)
+        z = torch.randn(mb_size, z_dim).to(device)
         samples = G(z).detach().cpu().numpy()[:16]
 
     fig = plt.figure(figsize=(4, 4))
@@ -146,68 +124,64 @@ def save_sample(G, epoch, mb_size, Z_dim):
         ax.set_aspect('equal')
         plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
 
-    if not os.path.exists(f'{out_dir}'):
-        os.makedirs(f'{out_dir}')
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
     plt.savefig(f'{out_dir}/{str(epoch).zfill(3)}.png', bbox_inches='tight')
     plt.close(fig)
 
 
+if __name__ == "__main__":
+    # Hyperparameters
+    mb_size = 64
+    Z_dim = 1000
+    h_dim = 128
+    lr = 1e-3
 
-########################### Main #######################################
-wandb_log = True
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # Load MNIST data
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: x.view(-1))
+    ])
+    train_dataset = datasets.MNIST(root='../MNIST', train=True, transform=transform, download=True)
+    train_loader = DataLoader(train_dataset, batch_size=mb_size, shuffle=True)
 
-# Instantiate models
-G = Generator(Z_dim, h_dim, X_dim).to(device)
-D = Discriminator(X_dim, h_dim).to(device)
+    wandb_log = True
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# Optimizers
-G_solver = optim.Adam(G.parameters(), lr=lr)
-D_solver = optim.Adam(D.parameters(), lr=lr)
+    G = Generator(Z_dim, h_dim, X_dim).to(device)
+    D = Discriminator(X_dim, h_dim).to(device)
 
-# Loss function
-def my_bce_loss(preds, targets):
-    return F.binary_cross_entropy(preds, targets)
+    G_solver = optim.Adam(G.parameters(), lr=lr)
+    D_solver = optim.Adam(D.parameters(), lr=lr)
 
-#loss_fn = nn.BCEWithLogitsLoss()
-loss_fn = my_bce_loss
+    loss_fn = lambda preds, targets: F.binary_cross_entropy(preds, targets)
 
-if wandb_log: 
-    wandb.init(project="conditional-gan-mnist")
+    if wandb_log:
+        wandb.init(project="conditional-gan-mnist")
+        wandb.config.update({
+            "batch_size": mb_size,
+            "Z_dim": Z_dim,
+            "X_dim": X_dim,
+            "h_dim": h_dim,
+            "lr": lr,
+        })
 
-    # Log hyperparameters
-    wandb.config.update({
-        "batch_size": mb_size,
-        "Z_dim": Z_dim,
-        "X_dim": X_dim,
-        "h_dim": h_dim,
-        "lr": lr,
-    })
+    best_g_loss = float('inf')
+    save_dir = 'checkpoints'
+    os.makedirs(save_dir, exist_ok=True)
 
-best_g_loss = float('inf')  # Initialize best generator loss
-save_dir = 'checkpoints'
-os.makedirs(save_dir, exist_ok=True)
+    epochs = 100
+    for epoch in range(epochs):
+        G, D, G_loss_avg, D_loss_avg = cGANTraining(
+            G, D, loss_fn, train_loader, G_solver, D_solver, Z_dim, device
+        )
+        print(f'epoch{epoch}; D_loss: {D_loss_avg:.4f}; G_loss: {G_loss_avg:.4f}')
 
-#Train epochs
-epochs = 100
+        if G_loss_avg < best_g_loss:
+            best_g_loss = G_loss_avg
+            torch.save(G.state_dict(), os.path.join(save_dir, 'G_best.pth'))
+            torch.save(D.state_dict(), os.path.join(save_dir, 'D_best.pth'))
+            print(f"Saved Best Models at epoch {epoch} | G_loss: {best_g_loss:.4f}")
 
-for epoch in range(epochs):
-    G, D, G_loss_avg, D_loss_avg= cGANTraining(G, D, loss_fn, train_loader)
-
-    print(f'epoch{epoch}; D_loss: {D_loss_avg:.4f}; G_loss: {G_loss_avg:.4f}')
-
-    if G_loss_avg < best_g_loss:
-        best_g_loss = G_loss_avg
-        torch.save(G.state_dict(), os.path.join(save_dir, 'G_best.pth'))
-        torch.save(D.state_dict(), os.path.join(save_dir, 'D_best.pth'))
-        print(f"Saved Best Models at epoch {epoch} | G_loss: {best_g_loss:.4f}")
-
-    save_sample(G, epoch, mb_size, Z_dim)
-
-
-# Inference    
-# G.load_state_dict(torch.load('checkpoints/G_best.pth'))
-# G.eval()
-
-# save_sample(G, "best", mb_size, Z_dim)
+        save_sample(G, epoch, mb_size, Z_dim, device)
