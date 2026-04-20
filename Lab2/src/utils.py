@@ -58,7 +58,6 @@ def make_generated_figure(
         ax.imshow(fake_images[i], cmap="gray")
         ax.axis("off")
     plt.tight_layout()
-    generator.train()
     return fig
 
 
