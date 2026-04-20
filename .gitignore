@@ -212,7 +212,7 @@ data/
 *.zip
 
 # Documentation
-Project/docs/
+docs/
 
 # Plots
 Lab1/plot/
