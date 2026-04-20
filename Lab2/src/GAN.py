@@ -12,6 +12,8 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import wandb
 
+from utils import make_generated_figure, save_generated_grid
+
 
 def xavier_init(m):
     if isinstance(m, nn.Linear):
@@ -183,8 +185,6 @@ def train_GAN(
     Reads from config: epochs, latent_dim, image_dim, wandb_image_interval,
     jupyter_plot_interval.
     """
-    from utils import make_generated_figure, save_generated_grid
-
     history: dict[str, list[float]] = {
         "d_loss": [], "g_loss": [], "d_real_loss": [], "d_fake_loss": []
     }
