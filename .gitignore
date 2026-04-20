@@ -229,6 +229,7 @@ runs/
 
 # Claude
 .claude/settings.local.json
+CLAUDE.md
 
 # Visual Studio Code launch configurations
 .vscode/launch.json
