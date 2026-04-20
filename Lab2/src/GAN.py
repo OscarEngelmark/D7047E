@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -12,7 +11,9 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 import wandb
 
-from utils import make_generated_figure, save_generated_grid
+from tqdm.auto import tqdm
+
+from utils import make_generated_figure
 
 
 def xavier_init(m):
@@ -176,57 +177,48 @@ def train_GAN(
     config: dict,
     device: torch.device,
     wandb_kwargs: dict,
-    save_epochs: set[int] | None = None,
-    out_dir: Path | str | None = None,
 ) -> dict[str, list[float]]:
     """Full GAN training loop with wandb logging.
 
     Returns history dict with per-epoch d_loss, g_loss, d_real_loss, d_fake_loss.
-    Reads from config: epochs, latent_dim, image_dim, wandb_image_interval,
-    jupyter_plot_interval.
+    Reads from config: epochs, latent_dim, image_dim.
+    Logs ~20 image snapshots to wandb evenly across training regardless of epoch count.
     """
+    epochs = config["epochs"]
+    log_img_every = max(1, epochs // 20)
+
     history: dict[str, list[float]] = {
         "d_loss": [], "g_loss": [], "d_real_loss": [], "d_fake_loss": []
     }
 
     with wandb.init(**wandb_kwargs) as run:  # type: ignore[arg-type]
-        for epoch in range(config["epochs"]):
-            avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_GAN_epoch(
-                G, D, criterion, train_loader,
-                g_optimizer, d_optimizer,
-                config["latent_dim"], config["image_dim"], device,
-            )
+        with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
+            for epoch in pbar:
+                avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_GAN_epoch(
+                    G, D, criterion, train_loader,
+                    g_optimizer, d_optimizer,
+                    config["latent_dim"], config["image_dim"], device,
+                )
 
-            history["d_loss"].append(avg_d_loss)
-            history["g_loss"].append(avg_g_loss)
-            history["d_real_loss"].append(avg_d_real_loss)
-            history["d_fake_loss"].append(avg_d_fake_loss)
+                history["d_loss"].append(avg_d_loss)
+                history["g_loss"].append(avg_g_loss)
+                history["d_real_loss"].append(avg_d_real_loss)
+                history["d_fake_loss"].append(avg_d_fake_loss)
 
-            print(
-                f"Epoch [{epoch + 1}/{config['epochs']}] | "
-                f"D_loss: {avg_d_loss:.4f} | "
-                f"G_loss: {avg_g_loss:.4f}"
-            )
+                pbar.set_postfix(D=f"{avg_d_loss:.4f}", G=f"{avg_g_loss:.4f}")
 
-            run.log({
-                "epoch": epoch + 1,
-                "D_loss": avg_d_loss,
-                "G_loss": avg_g_loss,
-                "D_real_loss": avg_d_real_loss,
-                "D_fake_loss": avg_d_fake_loss,
-            }, step=epoch + 1)
+                run.log({
+                    "epoch": epoch + 1,
+                    "D_loss": avg_d_loss,
+                    "G_loss": avg_g_loss,
+                    "D_real_loss": avg_d_real_loss,
+                    "D_fake_loss": avg_d_fake_loss,
+                }, step=epoch + 1)
 
-            if (epoch + 1) % config["wandb_image_interval"] == 0:
-                fig = make_generated_figure(G, config["latent_dim"], device)
-                run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
-                if (epoch + 1) % config["jupyter_plot_interval"] == 0:
-                    plt.show()
-                plt.close(fig)
-
-            if save_epochs and (epoch + 1) in save_epochs and out_dir is not None:
-                save_path = Path(out_dir) / f"epoch_{epoch + 1}.png"
-                save_generated_grid(G, config["latent_dim"], save_path, device)
-                print(f"Saved generated samples to: {save_path}")
+                if (epoch + 1) % log_img_every == 0:
+                    fig = make_generated_figure(G, config["latent_dim"], device)
+                    run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
+                    plt.close(fig)
 
     return history
 
