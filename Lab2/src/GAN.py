@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-import tqdm
 import os
 import wandb
 
@@ -47,62 +46,122 @@ class Discriminator(nn.Module):
         return out
 
 
-def cGANTraining(G, D, loss_fn, train_loader, G_solver, D_solver, z_dim, device):
+def train_GAN(
+    G: nn.Module,
+    D: nn.Module,
+    criterion,
+    train_loader,
+    g_optimizer,
+    d_optimizer,
+    latent_dim: int,
+    image_dim: int,
+    device: torch.device,
+) -> tuple[float, float, float, float]:
+    """Run one training epoch for a vanilla GAN.
+
+    Returns avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss.
+    """
     G.train()
     D.train()
 
-    D_loss_real_total = 0
-    D_loss_fake_total = 0
-    G_loss_total = 0
-    t = tqdm.tqdm(train_loader)
+    d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
 
-    for it, (X_real, labels) in enumerate(t):
-        X_real = X_real.float().to(device)
+    for real_images, _ in train_loader:
+        real_images = real_images.view(-1, image_dim).to(device, non_blocking=True)
+        batch_size = real_images.size(0)
 
-        z = torch.randn(X_real.size(0), z_dim).to(device)
-        ones_label = torch.ones(X_real.size(0), 1).to(device)
-        zeros_label = torch.zeros(X_real.size(0), 1).to(device)
+        real_targets = torch.ones(batch_size, 1, device=device)
+        fake_targets = torch.zeros(batch_size, 1, device=device)
 
-        # ================= Train Discriminator =================
-        G_sample = G(z)
-        D_real = D(X_real)
-        D_fake = D(G_sample.detach())
+        # Train Discriminator
+        z = torch.randn(batch_size, latent_dim, device=device)
+        d_real = D(real_images)
+        d_fake = D(G(z).detach())
+        d_real_loss = criterion(d_real, real_targets)
+        d_fake_loss = criterion(d_fake, fake_targets)
+        d_loss = d_real_loss + d_fake_loss
+        d_optimizer.zero_grad()
+        d_loss.backward()
+        d_optimizer.step()
 
-        D_loss_real = loss_fn(D_real, ones_label)
-        D_loss_fake = loss_fn(D_fake, zeros_label)
-        D_loss = D_loss_real + D_loss_fake
-        D_loss_real_total += D_loss_real.item()
-        D_loss_fake_total += D_loss_fake.item()
+        # Train Generator
+        z = torch.randn(batch_size, latent_dim, device=device)
+        g_loss = criterion(D(G(z)), real_targets)
+        g_optimizer.zero_grad()
+        g_loss.backward()
+        g_optimizer.step()
 
-        D_solver.zero_grad()
-        D_loss.backward()
-        D_solver.step()
+        d_loss_list.append(d_loss.item())
+        g_loss_list.append(g_loss.item())
+        d_real_loss_list.append(d_real_loss.item())
+        d_fake_loss_list.append(d_fake_loss.item())
 
-        # ================= Train Generator ====================
-        z = torch.randn(X_real.size(0), z_dim).to(device)
-        G_sample = G(z)
-        D_fake = D(G_sample)
+    return (
+        float(np.mean(d_loss_list)),
+        float(np.mean(g_loss_list)),
+        float(np.mean(d_real_loss_list)),
+        float(np.mean(d_fake_loss_list)),
+    )
 
-        G_loss = loss_fn(D_fake, ones_label)
-        G_loss_total += G_loss.item()
 
-        G_solver.zero_grad()
-        G_loss.backward()
-        G_solver.step()
+def train_cGAN(
+    G: nn.Module,
+    D: nn.Module,
+    criterion,
+    train_loader,
+    g_optimizer,
+    d_optimizer,
+    latent_dim: int,
+    image_dim: int,
+    device: torch.device,
+) -> tuple[float, float, float, float]:
+    """Run one training epoch for a conditional GAN.
 
-    D_loss_real_avg = D_loss_real_total / len(train_loader)
-    D_loss_fake_avg = D_loss_fake_total / len(train_loader)
-    D_loss_avg = D_loss_real_avg + D_loss_fake_avg
-    G_loss_avg = G_loss_total / len(train_loader)
+    Returns avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss.
+    G must accept (z, labels) and D must accept (x, labels).
+    """
+    G.train()
+    D.train()
 
-    wandb.log({
-        "D_loss_real": D_loss_real_avg,
-        "D_loss_fake": D_loss_fake_avg,
-        "D_loss": D_loss_avg,
-        "G_loss": G_loss_avg
-    })
+    d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
 
-    return G, D, G_loss_avg, D_loss_avg
+    for real_images, labels in train_loader:
+        real_images = real_images.view(-1, image_dim).to(device, non_blocking=True)
+        labels = labels.to(device)
+        batch_size = real_images.size(0)
+
+        real_targets = torch.ones(batch_size, 1, device=device)
+        fake_targets = torch.zeros(batch_size, 1, device=device)
+
+        # Train Discriminator
+        z = torch.randn(batch_size, latent_dim, device=device)
+        d_real = D(real_images, labels)
+        d_fake = D(G(z, labels).detach(), labels)
+        d_real_loss = criterion(d_real, real_targets)
+        d_fake_loss = criterion(d_fake, fake_targets)
+        d_loss = d_real_loss + d_fake_loss
+        d_optimizer.zero_grad()
+        d_loss.backward()
+        d_optimizer.step()
+
+        # Train Generator
+        z = torch.randn(batch_size, latent_dim, device=device)
+        g_loss = criterion(D(G(z, labels), labels), real_targets)
+        g_optimizer.zero_grad()
+        g_loss.backward()
+        g_optimizer.step()
+
+        d_loss_list.append(d_loss.item())
+        g_loss_list.append(g_loss.item())
+        d_real_loss_list.append(d_real_loss.item())
+        d_fake_loss_list.append(d_fake_loss.item())
+
+    return (
+        float(np.mean(d_loss_list)),
+        float(np.mean(g_loss_list)),
+        float(np.mean(d_real_loss_list)),
+        float(np.mean(d_fake_loss_list)),
+    )
 
 
 def save_sample(G, epoch, mb_size, z_dim, device):
@@ -173,13 +232,13 @@ if __name__ == "__main__":
 
     epochs = 100
     for epoch in range(epochs):
-        G, D, G_loss_avg, D_loss_avg = cGANTraining(
-            G, D, loss_fn, train_loader, G_solver, D_solver, Z_dim, device
+        avg_d_loss, avg_g_loss, _, _ = train_GAN(
+            G, D, loss_fn, train_loader, G_solver, D_solver, Z_dim, X_dim, device
         )
-        print(f'epoch{epoch}; D_loss: {D_loss_avg:.4f}; G_loss: {G_loss_avg:.4f}')
+        print(f'epoch{epoch}; D_loss: {avg_d_loss:.4f}; G_loss: {avg_g_loss:.4f}')
 
-        if G_loss_avg < best_g_loss:
-            best_g_loss = G_loss_avg
+        if avg_g_loss < best_g_loss:
+            best_g_loss = avg_g_loss
             torch.save(G.state_dict(), os.path.join(save_dir, 'G_best.pth'))
             torch.save(D.state_dict(), os.path.join(save_dir, 'D_best.pth'))
             print(f"Saved Best Models at epoch {epoch} | G_loss: {best_g_loss:.4f}")
