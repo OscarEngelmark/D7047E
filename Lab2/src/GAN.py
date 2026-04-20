@@ -10,8 +10,6 @@ import numpy as np
 import os
 import wandb
 
-X_dim = 784  # 28 x 28
-
 
 def xavier_init(m):
     if isinstance(m, nn.Linear):
@@ -192,6 +190,7 @@ def save_sample(G, epoch, mb_size, z_dim, device):
 
 if __name__ == "__main__":
     # Hyperparameters
+    X_dim = 784  # 28 x 28
     mb_size = 64
     Z_dim = 1000
     h_dim = 128
