@@ -45,8 +45,7 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         h = F.relu(self.fc1(x))
-        out = torch.sigmoid(self.fc2(h))
-        return out
+        return self.fc2(h)
 
 
 def train_GAN_epoch(
