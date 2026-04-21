@@ -218,7 +218,7 @@ def train_GAN(
     scaler = torch.amp.GradScaler("cuda") if use_cuda else None  # type: ignore[attr-defined]
 
     epochs = config["epochs"]
-    log_img_every = max(1, epochs // 20)
+    log_img_every = 20
 
     history: dict[str, list[float]] = {
         "d_loss": [], "g_loss": [], "d_real_loss": [], "d_fake_loss": []
