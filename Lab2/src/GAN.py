@@ -51,21 +51,24 @@ class Discriminator(nn.Module):
 def train_GAN_epoch(
     G: nn.Module,
     D: nn.Module,
-    criterion,
     train_loader,
     g_optimizer,
     d_optimizer,
     latent_dim: int,
     image_dim: int,
     device: torch.device,
+    loss_type: str = "bce",
     scaler=None,
 ) -> tuple[float, float, float, float]:
     """Run one training epoch for a vanilla GAN.
 
     Returns avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss.
+    loss_type: "bce" uses BCEWithLogitsLoss internally; "logistic" uses softplus-based loss.
     """
     G.train()
     D.train()
+
+    criterion = nn.BCEWithLogitsLoss()
 
     amp_enabled = scaler is not None
     d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
@@ -74,16 +77,19 @@ def train_GAN_epoch(
         real_images = real_images.view(-1, image_dim).to(device, non_blocking=True)
         batch_size = real_images.size(0)
 
-        real_targets = torch.ones(batch_size, 1, device=device)
-        fake_targets = torch.zeros(batch_size, 1, device=device)
-
         # Train Discriminator
         z = torch.randn(batch_size, latent_dim, device=device)
         with torch.autocast(device_type=device.type, enabled=amp_enabled):
-            d_real = D(real_images) # classify real images
-            d_fake = D(G(z).detach()) # classify fake images
-            d_real_loss = criterion(d_real, real_targets)
-            d_fake_loss = criterion(d_fake, fake_targets)
+            d_real = D(real_images)
+            d_fake = D(G(z).detach())
+            if loss_type == "logistic":
+                d_real_loss = F.softplus(-d_real).mean()
+                d_fake_loss = F.softplus(d_fake).mean()
+            else:
+                real_targets = torch.ones(batch_size, 1, device=device)
+                fake_targets = torch.zeros(batch_size, 1, device=device)
+                d_real_loss = criterion(d_real, real_targets)
+                d_fake_loss = criterion(d_fake, fake_targets)
             d_loss = d_real_loss + d_fake_loss
         d_optimizer.zero_grad()
         if scaler is not None:
@@ -97,7 +103,12 @@ def train_GAN_epoch(
         # Train Generator
         z = torch.randn(batch_size, latent_dim, device=device)
         with torch.autocast(device_type=device.type, enabled=amp_enabled):
-            g_loss = criterion(D(G(z)), real_targets)
+            fake_logits = D(G(z))
+            if loss_type == "logistic":
+                g_loss = F.softplus(-fake_logits).mean()
+            else:
+                real_targets = torch.ones(batch_size, 1, device=device)
+                g_loss = criterion(fake_logits, real_targets)
         g_optimizer.zero_grad()
         if scaler is not None:
             scaler.scale(g_loss).backward()
@@ -123,7 +134,6 @@ def train_GAN_epoch(
 def train_cGAN_epoch(
     G: nn.Module,
     D: nn.Module,
-    criterion,
     train_loader,
     g_optimizer,
     d_optimizer,
@@ -140,6 +150,7 @@ def train_cGAN_epoch(
     G.train()
     D.train()
 
+    criterion = nn.BCEWithLogitsLoss()
     amp_enabled = scaler is not None
     d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
 
@@ -197,19 +208,20 @@ def train_cGAN_epoch(
 def train_GAN(
     G: nn.Module,
     D: nn.Module,
-    criterion,
     train_loader,
     g_optimizer,
     d_optimizer,
     config: dict,
     device: torch.device,
     wandb_kwargs: dict,
+    loss_type: str = "bce",
 ) -> None:
     """Full GAN training loop with wandb logging.
 
     Returns history dict with per-epoch d_loss, g_loss, d_real_loss, d_fake_loss.
     Reads from config: epochs, latent_dim, image_dim.
     Logs ~20 image snapshots to wandb evenly across training regardless of epoch count.
+    loss_type: "bce" or "logistic" — passed through to train_GAN_epoch.
     """
     use_cuda = device.type == "cuda"
     if use_cuda:
@@ -228,10 +240,10 @@ def train_GAN(
         with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
             for epoch in pbar:
                 avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_GAN_epoch(
-                    G, D, criterion, train_loader,
+                    G, D, train_loader,
                     g_optimizer, d_optimizer,
                     config["latent_dim"], config["image_dim"], device,
-                    scaler=scaler,
+                    loss_type=loss_type, scaler=scaler,
                 )
 
                 history["d_loss"].append(avg_d_loss)
@@ -325,7 +337,7 @@ if __name__ == "__main__":
     epochs = 100
     for epoch in range(epochs):
         avg_d_loss, avg_g_loss, _, _ = train_GAN_epoch(
-            G, D, loss_fn, train_loader, G_solver, D_solver, Z_dim, X_dim, device
+            G, D, train_loader, G_solver, D_solver, Z_dim, X_dim, device
         )
         print(f'epoch{epoch}; D_loss: {avg_d_loss:.4f}; G_loss: {avg_g_loss:.4f}')
 
