@@ -59,6 +59,7 @@ def train_GAN_epoch(
     latent_dim: int,
     image_dim: int,
     device: torch.device,
+    scaler=None,
 ) -> tuple[float, float, float, float]:
     """Run one training epoch for a vanilla GAN.
 
@@ -67,6 +68,7 @@ def train_GAN_epoch(
     G.train()
     D.train()
 
+    amp_enabled = scaler is not None
     d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
 
     for real_images, _ in train_loader:
@@ -78,21 +80,33 @@ def train_GAN_epoch(
 
         # Train Discriminator
         z = torch.randn(batch_size, latent_dim, device=device)
-        d_real = D(real_images)
-        d_fake = D(G(z).detach())
-        d_real_loss = criterion(d_real, real_targets)
-        d_fake_loss = criterion(d_fake, fake_targets)
-        d_loss = d_real_loss + d_fake_loss
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            d_real = D(real_images)
+            d_fake = D(G(z).detach())
+            d_real_loss = criterion(d_real, real_targets)
+            d_fake_loss = criterion(d_fake, fake_targets)
+            d_loss = d_real_loss + d_fake_loss
         d_optimizer.zero_grad()
-        d_loss.backward()
-        d_optimizer.step()
+        if scaler is not None:
+            scaler.scale(d_loss).backward()
+            scaler.step(d_optimizer)
+            scaler.update()
+        else:
+            d_loss.backward()
+            d_optimizer.step()
 
         # Train Generator
         z = torch.randn(batch_size, latent_dim, device=device)
-        g_loss = criterion(D(G(z)), real_targets)
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            g_loss = criterion(D(G(z)), real_targets)
         g_optimizer.zero_grad()
-        g_loss.backward()
-        g_optimizer.step()
+        if scaler is not None:
+            scaler.scale(g_loss).backward()
+            scaler.step(g_optimizer)
+            scaler.update()
+        else:
+            g_loss.backward()
+            g_optimizer.step()
 
         d_loss_list.append(d_loss.item())
         g_loss_list.append(g_loss.item())
@@ -117,6 +131,7 @@ def train_cGAN_epoch(
     latent_dim: int,
     image_dim: int,
     device: torch.device,
+    scaler=None,
 ) -> tuple[float, float, float, float]:
     """Run one training epoch for a conditional GAN.
 
@@ -126,6 +141,7 @@ def train_cGAN_epoch(
     G.train()
     D.train()
 
+    amp_enabled = scaler is not None
     d_loss_list, g_loss_list, d_real_loss_list, d_fake_loss_list = [], [], [], []
 
     for real_images, labels in train_loader:
@@ -138,21 +154,33 @@ def train_cGAN_epoch(
 
         # Train Discriminator
         z = torch.randn(batch_size, latent_dim, device=device)
-        d_real = D(real_images, labels)
-        d_fake = D(G(z, labels).detach(), labels)
-        d_real_loss = criterion(d_real, real_targets)
-        d_fake_loss = criterion(d_fake, fake_targets)
-        d_loss = d_real_loss + d_fake_loss
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            d_real = D(real_images, labels)
+            d_fake = D(G(z, labels).detach(), labels)
+            d_real_loss = criterion(d_real, real_targets)
+            d_fake_loss = criterion(d_fake, fake_targets)
+            d_loss = d_real_loss + d_fake_loss
         d_optimizer.zero_grad()
-        d_loss.backward()
-        d_optimizer.step()
+        if scaler is not None:
+            scaler.scale(d_loss).backward()
+            scaler.step(d_optimizer)
+            scaler.update()
+        else:
+            d_loss.backward()
+            d_optimizer.step()
 
         # Train Generator
         z = torch.randn(batch_size, latent_dim, device=device)
-        g_loss = criterion(D(G(z, labels), labels), real_targets)
+        with torch.autocast(device_type=device.type, enabled=amp_enabled):
+            g_loss = criterion(D(G(z, labels), labels), real_targets)
         g_optimizer.zero_grad()
-        g_loss.backward()
-        g_optimizer.step()
+        if scaler is not None:
+            scaler.scale(g_loss).backward()
+            scaler.step(g_optimizer)
+            scaler.update()
+        else:
+            g_loss.backward()
+            g_optimizer.step()
 
         d_loss_list.append(d_loss.item())
         g_loss_list.append(g_loss.item())
@@ -184,6 +212,12 @@ def train_GAN(
     Reads from config: epochs, latent_dim, image_dim.
     Logs ~20 image snapshots to wandb evenly across training regardless of epoch count.
     """
+    use_cuda = device.type == "cuda"
+    if use_cuda:
+        G = torch.compile(G)  # type: ignore[assignment]
+        D = torch.compile(D)  # type: ignore[assignment]
+    scaler = torch.amp.GradScaler("cuda") if use_cuda else None  # type: ignore[attr-defined]
+
     epochs = config["epochs"]
     log_img_every = max(1, epochs // 20)
 
@@ -198,6 +232,7 @@ def train_GAN(
                     G, D, criterion, train_loader,
                     g_optimizer, d_optimizer,
                     config["latent_dim"], config["image_dim"], device,
+                    scaler=scaler,
                 )
 
                 history["d_loss"].append(avg_d_loss)
