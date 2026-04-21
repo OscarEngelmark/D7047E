@@ -80,8 +80,8 @@ def train_GAN_epoch(
         # Train Discriminator
         z = torch.randn(batch_size, latent_dim, device=device)
         with torch.autocast(device_type=device.type, enabled=amp_enabled):
-            d_real = D(real_images)
-            d_fake = D(G(z).detach())
+            d_real = D(real_images) # classify real images
+            d_fake = D(G(z).detach()) # classify fake images
             d_real_loss = criterion(d_real, real_targets)
             d_fake_loss = criterion(d_fake, fake_targets)
             d_loss = d_real_loss + d_fake_loss
@@ -204,7 +204,7 @@ def train_GAN(
     config: dict,
     device: torch.device,
     wandb_kwargs: dict,
-) -> dict[str, list[float]]:
+) -> None:
     """Full GAN training loop with wandb logging.
 
     Returns history dict with per-epoch d_loss, g_loss, d_real_loss, d_fake_loss.
@@ -253,8 +253,6 @@ def train_GAN(
                     fig = make_generated_figure(G, config["latent_dim"], device)
                     run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
                     plt.close(fig)
-
-    return history
 
 
 def save_sample(G, epoch, mb_size, z_dim, device):
