@@ -86,6 +86,41 @@ def save_generated_grid(
     plt.close(fig)
 
 
+def make_cgan_figure(
+    generator: torch.nn.Module,
+    latent_dim: int,
+    device: torch.device,
+    digit: int,
+    num_images: int = 16,
+) -> Figure:
+    """Sample from a conditional generator for a given digit and return a matplotlib figure."""
+    generator.eval()
+    with torch.no_grad():
+        z = torch.randn(num_images, latent_dim, device=device)
+        labels = torch.full((num_images,), digit, dtype=torch.long, device=device)
+        fake_images = generator(z, labels).view(-1, 28, 28).cpu().numpy()
+
+    fig, axes = plt.subplots(4, 4, figsize=(6, 6))
+    for i, ax in enumerate(axes.flat):
+        ax.imshow(fake_images[i], cmap="gray")
+        ax.axis("off")
+    plt.tight_layout()
+    return fig
+
+
+def show_cgan_images(
+    generator: torch.nn.Module,
+    latent_dim: int,
+    device: torch.device,
+    digit: int,
+    num_images: int = 16,
+) -> None:
+    """Sample from a conditional generator for a given digit and display in the notebook."""
+    fig = make_cgan_figure(generator, latent_dim, device, digit, num_images)
+    plt.show()
+    plt.close(fig)
+
+
 def build_model_name(config: dict, task_name: str = "task1", file_ext: str = "pt") -> str:
     """Build a readable checkpoint filename from a GAN training config."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
