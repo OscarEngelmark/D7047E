@@ -13,7 +13,7 @@ import wandb
 
 from tqdm.auto import tqdm
 
-from utils import make_generated_figure
+from utils import make_generated_figure, make_cgan_figure
 
 
 def xavier_init(m):
@@ -45,6 +45,34 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         h = F.relu(self.fc1(x))
+        return self.fc2(h)
+
+
+class ConditionalGenerator(nn.Module):
+    def __init__(self, z_dim, h_dim, x_dim, num_classes):
+        super().__init__()
+        self.num_classes = num_classes
+        self.fc1 = nn.Linear(z_dim + num_classes, h_dim)
+        self.fc2 = nn.Linear(h_dim, x_dim)
+        self.apply(xavier_init)
+
+    def forward(self, z, labels):
+        y = F.one_hot(labels, self.num_classes).float()
+        h = F.relu(self.fc1(torch.cat([z, y], dim=1)))
+        return torch.sigmoid(self.fc2(h))
+
+
+class ConditionalDiscriminator(nn.Module):
+    def __init__(self, x_dim, h_dim, num_classes):
+        super().__init__()
+        self.num_classes = num_classes
+        self.fc1 = nn.Linear(x_dim + num_classes, h_dim)
+        self.fc2 = nn.Linear(h_dim, 1)
+        self.apply(xavier_init)
+
+    def forward(self, x, labels):
+        y = F.one_hot(labels, self.num_classes).float()
+        h = F.relu(self.fc1(torch.cat([x, y], dim=1)))
         return self.fc2(h)
 
 
@@ -264,6 +292,57 @@ def train_GAN(
                 if (epoch + 1) % log_img_every == 0:
                     fig = make_generated_figure(G, config["latent_dim"], device)
                     run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
+                    plt.close(fig)
+
+
+def train_cGAN(
+    G: nn.Module,
+    D: nn.Module,
+    train_loader,
+    g_optimizer,
+    d_optimizer,
+    config: dict,
+    device: torch.device,
+    wandb_kwargs: dict,
+) -> None:
+    """Full conditional GAN training loop with wandb logging.
+
+    Reads from config: epochs, latent_dim, image_dim, num_classes.
+    Optional config key 'log_digit' (default 3) controls which digit is logged to wandb.
+    """
+    use_cuda = device.type == "cuda"
+    if use_cuda:
+        G = torch.compile(G)  # type: ignore[assignment]
+        D = torch.compile(D)  # type: ignore[assignment]
+    scaler = torch.amp.GradScaler("cuda") if use_cuda else None  # type: ignore[attr-defined]
+
+    epochs = config["epochs"]
+    log_img_every = 20
+    log_digit = config.get("log_digit", 3)
+
+    with wandb.init(**wandb_kwargs) as run:  # type: ignore[arg-type]
+        with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
+            for epoch in pbar:
+                avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_cGAN_epoch(
+                    G, D, train_loader,
+                    g_optimizer, d_optimizer,
+                    config["latent_dim"], config["image_dim"], device,
+                    scaler=scaler,
+                )
+
+                pbar.set_postfix(D=f"{avg_d_loss:.4f}", G=f"{avg_g_loss:.4f}")
+
+                run.log({
+                    "epoch": epoch + 1,
+                    "D_loss": avg_d_loss,
+                    "G_loss": avg_g_loss,
+                    "D_real_loss": avg_d_real_loss,
+                    "D_fake_loss": avg_d_fake_loss,
+                }, step=epoch + 1)
+
+                if (epoch + 1) % log_img_every == 0:
+                    fig = make_cgan_figure(G, config["latent_dim"], device, log_digit)
+                    run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}, digit {log_digit}")}, step=epoch + 1)
                     plt.close(fig)
 
 
