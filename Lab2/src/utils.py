@@ -86,6 +86,30 @@ def save_generated_grid(
     plt.close(fig)
 
 
+def make_cgan_all_digits_figure(
+    generator: torch.nn.Module,
+    latent_dim: int,
+    device: torch.device,
+    num_classes: int = 10,
+) -> Figure:
+    """Generate one sample per digit class and return a num_classes×1 grid figure."""
+    generator.eval()
+    with torch.no_grad():
+        z = torch.randn(num_classes, latent_dim, device=device)
+        labels = torch.arange(num_classes, device=device)
+        fake_images = generator(z, labels).view(-1, 28, 28).cpu().numpy()
+
+    cols = 5
+    rows = num_classes // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 1.5, rows * 1.5))
+    for i, ax in enumerate(axes.flat):
+        ax.imshow(fake_images[i], cmap="gray")
+        ax.set_title(str(i), fontsize=8)
+        ax.axis("off")
+    plt.tight_layout()
+    return fig
+
+
 def make_cgan_figure(
     generator: torch.nn.Module,
     latent_dim: int,
