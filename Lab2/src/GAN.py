@@ -13,7 +13,7 @@ import wandb
 
 from tqdm.auto import tqdm
 
-from utils import make_generated_figure, make_cgan_figure
+from utils import make_generated_figure, make_cgan_all_digits_figure
 
 
 def xavier_init(m):
@@ -249,7 +249,7 @@ def train_GAN(
 
     Reads from config: epochs, latent_dim, image_dim.
     loss_type: "bce" or "logistic" — only used when conditional=False.
-    conditional=True: calls train_cGAN_epoch and logs images for config.get("log_digit", 3).
+    conditional=True: calls train_cGAN_epoch and logs one sample per digit class to wandb.
     """
     use_cuda = device.type == "cuda"
     if use_cuda:
@@ -259,7 +259,6 @@ def train_GAN(
 
     epochs = config["epochs"]
     log_img_every = 20
-    log_digit = config.get("log_digit", 3)
 
     with wandb.init(**wandb_kwargs) as run:  # type: ignore[arg-type]
         with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
@@ -291,12 +290,10 @@ def train_GAN(
 
                 if (epoch + 1) % log_img_every == 0:
                     if conditional:
-                        fig = make_cgan_figure(G, config["latent_dim"], device, log_digit)
-                        caption = f"Epoch {epoch + 1}, digit {log_digit}"
+                        fig = make_cgan_all_digits_figure(G, config["latent_dim"], device, config["num_classes"])
                     else:
                         fig = make_generated_figure(G, config["latent_dim"], device)
-                        caption = f"Epoch {epoch + 1}"
-                    run.log({"generated_samples": wandb.Image(fig, caption=caption)}, step=epoch + 1)
+                    run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
                     plt.close(fig)
 
 
