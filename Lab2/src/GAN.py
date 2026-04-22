@@ -243,72 +243,13 @@ def train_GAN(
     device: torch.device,
     wandb_kwargs: dict,
     loss_type: str = "bce",
+    conditional: bool = False,
 ) -> None:
     """Full GAN training loop with wandb logging.
 
-    Returns history dict with per-epoch d_loss, g_loss, d_real_loss, d_fake_loss.
     Reads from config: epochs, latent_dim, image_dim.
-    Logs ~20 image snapshots to wandb evenly across training regardless of epoch count.
-    loss_type: "bce" or "logistic" — passed through to train_GAN_epoch.
-    """
-    use_cuda = device.type == "cuda"
-    if use_cuda:
-        G = torch.compile(G)  # type: ignore[assignment]
-        D = torch.compile(D)  # type: ignore[assignment]
-    scaler = torch.amp.GradScaler("cuda") if use_cuda else None  # type: ignore[attr-defined]
-
-    epochs = config["epochs"]
-    log_img_every = 20
-
-    history: dict[str, list[float]] = {
-        "d_loss": [], "g_loss": [], "d_real_loss": [], "d_fake_loss": []
-    }
-
-    with wandb.init(**wandb_kwargs) as run:  # type: ignore[arg-type]
-        with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
-            for epoch in pbar:
-                avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_GAN_epoch(
-                    G, D, train_loader,
-                    g_optimizer, d_optimizer,
-                    config["latent_dim"], config["image_dim"], device,
-                    loss_type=loss_type, scaler=scaler,
-                )
-
-                history["d_loss"].append(avg_d_loss)
-                history["g_loss"].append(avg_g_loss)
-                history["d_real_loss"].append(avg_d_real_loss)
-                history["d_fake_loss"].append(avg_d_fake_loss)
-
-                pbar.set_postfix(D=f"{avg_d_loss:.4f}", G=f"{avg_g_loss:.4f}")
-
-                run.log({
-                    "epoch": epoch + 1,
-                    "D_loss": avg_d_loss,
-                    "G_loss": avg_g_loss,
-                    "D_real_loss": avg_d_real_loss,
-                    "D_fake_loss": avg_d_fake_loss,
-                }, step=epoch + 1)
-
-                if (epoch + 1) % log_img_every == 0:
-                    fig = make_generated_figure(G, config["latent_dim"], device)
-                    run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}")}, step=epoch + 1)
-                    plt.close(fig)
-
-
-def train_cGAN(
-    G: nn.Module,
-    D: nn.Module,
-    train_loader,
-    g_optimizer,
-    d_optimizer,
-    config: dict,
-    device: torch.device,
-    wandb_kwargs: dict,
-) -> None:
-    """Full conditional GAN training loop with wandb logging.
-
-    Reads from config: epochs, latent_dim, image_dim, num_classes.
-    Optional config key 'log_digit' (default 3) controls which digit is logged to wandb.
+    loss_type: "bce" or "logistic" — only used when conditional=False.
+    conditional=True: calls train_cGAN_epoch and logs images for config.get("log_digit", 3).
     """
     use_cuda = device.type == "cuda"
     if use_cuda:
@@ -323,12 +264,20 @@ def train_cGAN(
     with wandb.init(**wandb_kwargs) as run:  # type: ignore[arg-type]
         with tqdm(range(epochs), desc="Training", unit="ep") as pbar:
             for epoch in pbar:
-                avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_cGAN_epoch(
-                    G, D, train_loader,
-                    g_optimizer, d_optimizer,
-                    config["latent_dim"], config["image_dim"], device,
-                    scaler=scaler,
-                )
+                if conditional:
+                    avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_cGAN_epoch(
+                        G, D, train_loader,
+                        g_optimizer, d_optimizer,
+                        config["latent_dim"], config["image_dim"], device,
+                        scaler=scaler,
+                    )
+                else:
+                    avg_d_loss, avg_g_loss, avg_d_real_loss, avg_d_fake_loss = train_GAN_epoch(
+                        G, D, train_loader,
+                        g_optimizer, d_optimizer,
+                        config["latent_dim"], config["image_dim"], device,
+                        loss_type=loss_type, scaler=scaler,
+                    )
 
                 pbar.set_postfix(D=f"{avg_d_loss:.4f}", G=f"{avg_g_loss:.4f}")
 
@@ -341,8 +290,13 @@ def train_cGAN(
                 }, step=epoch + 1)
 
                 if (epoch + 1) % log_img_every == 0:
-                    fig = make_cgan_figure(G, config["latent_dim"], device, log_digit)
-                    run.log({"generated_samples": wandb.Image(fig, caption=f"Epoch {epoch + 1}, digit {log_digit}")}, step=epoch + 1)
+                    if conditional:
+                        fig = make_cgan_figure(G, config["latent_dim"], device, log_digit)
+                        caption = f"Epoch {epoch + 1}, digit {log_digit}"
+                    else:
+                        fig = make_generated_figure(G, config["latent_dim"], device)
+                        caption = f"Epoch {epoch + 1}"
+                    run.log({"generated_samples": wandb.Image(fig, caption=caption)}, step=epoch + 1)
                     plt.close(fig)
 
 
