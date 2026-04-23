@@ -212,7 +212,7 @@ data/
 *.zip
 
 # Documentation
-Project/docs/
+docs/
 
 # Plots
 Lab1/plot/
@@ -229,6 +229,7 @@ runs/
 
 # Claude
 .claude/settings.local.json
+CLAUDE.md
 
 # Visual Studio Code launch configurations
 .vscode/launch.json
