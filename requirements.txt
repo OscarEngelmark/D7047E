@@ -11,3 +11,5 @@ nltk
 ipywidgets
 transformers[torch]
 opencv-python-headless
+einops
+lpips
