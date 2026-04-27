@@ -119,3 +119,69 @@ Extends the Lab 0 utility set with Lab 1-specific helpers:
 - `fit()` – Full training loop with best-checkpoint saving and optional W&B logging.
 - `evaluate()` / `plot_confusion_matrix()` – Test-set evaluation and visualization.
 - `load_ann_run()` / `load_bilstm_run()` – Reload a saved ANN or BiLSTM checkpoint together with its fitted vectorizer/vocabulary for inference in the comparison notebook.
+
+---
+
+## Lab 2: Generative Models – GANs, Adversarial Attacks & Diffusion
+
+Lab 2 explores generative image modeling on MNIST across five tasks: vanilla and logistic-loss GANs, a conditional GAN for class-conditioned generation, adversarial attacks on a CNN classifier, and a simple diffusion model.
+
+### Files
+
+#### [Lab2_Task1.ipynb](Lab2/src/Lab2_Task1.ipynb) – Vanilla GAN
+
+Trains a two-layer feedforward GAN (Generator + Discriminator) on MNIST. Uses `BCEWithLogitsLoss` on raw logits for numerical stability and AMP compatibility. Default hyperparameters: `latent_dim=100`, `h_dim=128`, `lr=1e-3`, `batch_size=256`. Training is logged to Weights & Biases.
+
+---
+
+#### [Lab2_Task2.ipynb](Lab2/src/Lab2_Task2.ipynb) – Logistic Loss GAN
+
+Same architecture as Task 1 but with softplus-based logistic loss: D loss = `softplus(-f_real) + softplus(f_fake)`, G loss = `softplus(-f_fake)`. Trains for 5, 10, and 50 epochs and compares outputs to the BCE variant. Mathematically equivalent to `BCEWithLogitsLoss`; the task motivates understanding the loss formulation.
+
+---
+
+#### [Lab2_Task3.ipynb](Lab2/src/Lab2_Task3.ipynb) – Conditional GAN (CGAN)
+
+Extends the vanilla GAN with class conditioning. `ConditionalGenerator` and `ConditionalDiscriminator` each accept raw integer labels, which are one-hot encoded internally via `F.one_hot`. W&B image logging uses a 2×5 grid with one generated sample per digit class (0–9). Trained with `BCEWithLogitsLoss` and AMP.
+
+---
+
+#### [Lab2_Task4.ipynb](Lab2/src/Lab2_Task4.ipynb) – Adversarial Attacks
+
+Trains a CNN classifier on MNIST, then crafts adversarial examples via gradient-based perturbation to misclassify 4s as 9s. Also feeds pure random noise through the classifier and compares its confidence to that of the adversarial examples.
+
+---
+
+#### [Lab2_Task5.ipynb](Lab2/src/Lab2_Task5.ipynb) – Simple Diffusion Model
+
+Notebook by [Fareed Khan](https://github.com/FareedKhan-dev). Builds a score-based diffusion model for MNIST from scratch, progressing through three U-Net variants: skip connections via concatenation, skip connections via addition, and a transformer-augmented U-Net with cross-attention for class conditioning. Uses an Euler–Maruyama sampler and exponential noise schedule (σ=25). Once trained, the model generates samples for a specified digit class (0–9).
+
+---
+
+#### [GAN.py](Lab2/src/GAN.py) – GAN Models & Training Logic
+
+Central module for all GAN tasks. Provides:
+
+- `Generator` / `Discriminator` – Two-layer feedforward networks with Xavier initialization and raw logit output.
+- `ConditionalGenerator` / `ConditionalDiscriminator` – Label-conditioned variants; one-hot encoding applied internally.
+- `train_GAN_epoch()` – One unconditional training epoch; supports `loss_type="bce"` or `"logistic"`.
+- `train_cGAN_epoch()` – One conditional training epoch with label-aware model calls.
+- `train_GAN()` – Full training loop: applies `torch.compile` and AMP on CUDA, logs losses and generated images to W&B every `epochs // 20` steps.
+
+---
+
+#### [utils.py](Lab2/src/utils.py) – Visualization & Checkpoint Helpers
+
+- `device_check()` – Detects the best available device (CUDA → MPS → CPU) and prints environment info.
+- `make_generated_figure()` – Samples 16 images from a generator and returns a 4×4 matplotlib figure.
+- `make_cgan_all_digits_figure()` – Generates one sample per digit class (0–9) and returns a 2×5 labeled figure; used for W&B logging during CGAN training.
+- `make_cgan_figure()` – Generates a 4×4 grid for a single specified digit class.
+- `show_generated_images()` / `show_cgan_images()` – Notebook display wrappers.
+- `save_generated_grid()` – Saves a generated image grid to disk.
+- `build_model_name()` – Constructs a readable checkpoint filename from a training config dict.
+
+---
+
+#### [global_config.py](Lab2/src/global_config.py) – Shared Constants
+
+Defines shared paths (`DATA_DIR`, `MODELS_DIR`, `WANDB_DIR`) and W&B entity/project used across all Lab 2 notebooks.
