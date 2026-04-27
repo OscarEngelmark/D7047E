@@ -124,7 +124,7 @@ Extends the Lab 0 utility set with Lab 1-specific helpers:
 
 ## Lab 2: Generative Models – GANs, Adversarial Attacks & Diffusion
 
-Lab 2 explores generative image modeling on MNIST across five tasks: vanilla and logistic-loss GANs, a conditional GAN for class-conditioned generation, adversarial attacks on a CNN classifier, and a simple diffusion model.
+Lab 2 explores generative image modeling on MNIST across five tasks: vanilla GANs, a conditional GAN for class-conditioned generation, adversarial attacks on a CNN classifier, and a simple diffusion model.
 
 ### Files
 
@@ -136,7 +136,7 @@ Trains a two-layer feedforward GAN (Generator + Discriminator) on MNIST. Uses `B
 
 #### [Lab2_Task2.ipynb](Lab2/src/Lab2_Task2.ipynb) – Logistic Loss GAN
 
-Same architecture as Task 1 but with softplus-based logistic loss: D loss = `softplus(-f_real) + softplus(f_fake)`, G loss = `softplus(-f_fake)`. Trains for 5, 10, and 50 epochs and compares outputs to the BCE variant. Mathematically equivalent to `BCEWithLogitsLoss`; the task motivates understanding the loss formulation.
+Same architecture as Task 1 but with softplus-based logistic loss: D loss = `softplus(-f_real) + softplus(f_fake)`, G loss = `softplus(-f_fake)`. Trains and compares outputs to the BCE variant. Mathematically equivalent to `BCEWithLogitsLoss`; the task motivates understanding the loss formulation.
 
 ---
 
