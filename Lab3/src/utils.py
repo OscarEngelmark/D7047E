@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import platform
 import re
 import sys
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, cast
+
+if TYPE_CHECKING:
+    from models import DecoderRNNWithAttention, Vocabulary
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -121,7 +126,7 @@ def save_checkpoint(
     encoder_optimizer: Optional[torch.optim.Optimizer],
     best_val_loss: float,
     history: Dict,
-    vocab: object,
+    vocab: Vocabulary,
     model_config: Dict,
     is_best: bool = False,
 ) -> Path:
@@ -156,9 +161,9 @@ def save_checkpoint(
 
 def generate_caption_greedy(
     encoder: nn.Module,
-    decoder: nn.Module,
+    decoder: DecoderRNNWithAttention,
     image: torch.Tensor,
-    vocab: object,
+    vocab: Vocabulary,
     device: torch.device,
     max_length: int = 30,
 ) -> str:
@@ -210,8 +215,8 @@ def generate_caption_greedy(
 def show_prediction_pytorch(
     image_name: str,
     encoder: nn.Module,
-    decoder: nn.Module,
-    vocab: object,
+    decoder: DecoderRNNWithAttention,
+    vocab: Vocabulary,
     device: torch.device,
     image_to_captions: Dict[str, List[str]],
     image_dir: Path,
@@ -254,9 +259,9 @@ def show_prediction_pytorch(
 
 def generate_caption_beam_search(
     encoder: nn.Module,
-    decoder: nn.Module,
+    decoder: DecoderRNNWithAttention,
     image: torch.Tensor,
-    vocab: object,
+    vocab: Vocabulary,
     device: torch.device,
     beam_size: int = 3,
     max_length: int = 30,
@@ -408,10 +413,10 @@ def clean_reference_caption(caption: str) -> str:
 
 def evaluate_bleu(
     encoder: nn.Module,
-    decoder: nn.Module,
+    decoder: DecoderRNNWithAttention,
     image_names: List[str],
     image_to_captions: Dict[str, List[str]],
-    vocab: object,
+    vocab: Vocabulary,
     device: torch.device,
     image_dir: Path,
     eval_transform: Callable,
@@ -463,30 +468,30 @@ def evaluate_bleu(
         actual_captions.append(references)
         predicted_captions.append(prediction.split())
 
-    bleu_1 = corpus_bleu(
+    bleu_1 = cast(float, corpus_bleu(
         actual_captions,
         predicted_captions,
         weights=(1.0, 0, 0, 0),
         smoothing_function=smooth,
-    )
-    bleu_2 = corpus_bleu(
+    ))
+    bleu_2 = cast(float, corpus_bleu(
         actual_captions,
         predicted_captions,
         weights=(0.5, 0.5, 0, 0),
         smoothing_function=smooth,
-    )
-    bleu_3 = corpus_bleu(
+    ))
+    bleu_3 = cast(float, corpus_bleu(
         actual_captions,
         predicted_captions,
         weights=(1 / 3, 1 / 3, 1 / 3, 0),
         smoothing_function=smooth,
-    )
-    bleu_4 = corpus_bleu(
+    ))
+    bleu_4 = cast(float, corpus_bleu(
         actual_captions,
         predicted_captions,
         weights=(0.25, 0.25, 0.25, 0.25),
         smoothing_function=smooth,
-    )
+    ))
 
     return {
         "BLEU-1": bleu_1,
