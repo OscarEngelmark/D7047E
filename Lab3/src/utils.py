@@ -3,8 +3,17 @@ from __future__ import annotations
 import platform
 import re
 import sys
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, cast
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    cast,
+)
 
 if TYPE_CHECKING:
     from models import DecoderRNNWithAttention, Vocabulary
@@ -15,8 +24,11 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision
+import wandb
 from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu
 from PIL import Image
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 
@@ -409,6 +421,273 @@ def clean_reference_caption(caption: str) -> str:
         .replace("<end>", "")
         .strip()
     )
+
+
+def train_epoch(
+    encoder: nn.Module,
+    decoder: nn.Module,
+    train_loader: DataLoader,
+    criterion: nn.Module,
+    decoder_optimizer: torch.optim.Optimizer,
+    encoder_optimizer: Optional[torch.optim.Optimizer],
+    device: torch.device,
+    grad_clip: float = 5.0,
+    alpha_c: float = 1.0,
+) -> Tuple[float, float]:
+    """Train the model for one epoch."""
+    encoder.train()
+    decoder.train()
+
+    losses = AverageMeter()
+    top5_accs = AverageMeter()
+
+    progress_bar = tqdm(train_loader, desc="Training", leave=False)
+
+    for images, captions, lengths, _ in progress_bar:
+        images = images.to(device, non_blocking=True)
+        captions = captions.to(device, non_blocking=True)
+        lengths = lengths.to(device, non_blocking=True)
+
+        encoder_out = encoder(images)
+
+        predictions, sorted_captions, decode_lengths, alphas, _ = (
+            decoder(encoder_out, captions, lengths)
+        )
+
+        targets = sorted_captions[:, 1:]
+
+        packed_predictions = pack_padded_sequence(
+            predictions, decode_lengths, batch_first=True
+        ).data
+
+        packed_targets = pack_padded_sequence(
+            targets, decode_lengths, batch_first=True
+        ).data
+
+        loss = criterion(packed_predictions, packed_targets)
+
+        # Doubly stochastic attention regularization.
+        loss += alpha_c * ((1.0 - alphas.sum(dim=1)) ** 2).mean()
+
+        decoder_optimizer.zero_grad()
+
+        if encoder_optimizer is not None:
+            encoder_optimizer.zero_grad()
+
+        loss.backward()
+
+        if grad_clip is not None:
+            nn.utils.clip_grad_norm_(
+                decoder.parameters(), grad_clip
+            )
+
+            if encoder_optimizer is not None:
+                nn.utils.clip_grad_norm_(
+                    encoder.parameters(), grad_clip
+                )
+
+        decoder_optimizer.step()
+
+        if encoder_optimizer is not None:
+            encoder_optimizer.step()
+
+        top5 = accuracy_topk(
+            packed_predictions, packed_targets, k=5
+        )
+
+        losses.update(loss.item(), packed_targets.size(0))
+        top5_accs.update(top5, packed_targets.size(0))
+
+        progress_bar.set_postfix(
+            {
+                "loss": f"{losses.avg:.4f}",
+                "top5": f"{top5_accs.avg:.2f}",
+            }
+        )
+
+    return losses.avg, top5_accs.avg
+
+
+def validate_epoch(
+    encoder: nn.Module,
+    decoder: nn.Module,
+    val_loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+    alpha_c: float = 1.0,
+) -> Tuple[float, float]:
+    """Validate the model for one epoch."""
+    encoder.eval()
+    decoder.eval()
+
+    losses = AverageMeter()
+    top5_accs = AverageMeter()
+
+    progress_bar = tqdm(val_loader, desc="Validation", leave=False)
+
+    with torch.no_grad():
+        for images, captions, lengths, _ in progress_bar:
+            images = images.to(device, non_blocking=True)
+            captions = captions.to(device, non_blocking=True)
+            lengths = lengths.to(device, non_blocking=True)
+
+            encoder_out = encoder(images)
+
+            (
+                predictions,
+                sorted_captions,
+                decode_lengths,
+                alphas,
+                _,
+            ) = decoder(encoder_out, captions, lengths)
+
+            targets = sorted_captions[:, 1:]
+
+            packed_predictions = pack_padded_sequence(
+                predictions, decode_lengths, batch_first=True
+            ).data
+
+            packed_targets = pack_padded_sequence(
+                targets, decode_lengths, batch_first=True
+            ).data
+
+            loss = criterion(packed_predictions, packed_targets)
+            loss += (
+                alpha_c
+                * ((1.0 - alphas.sum(dim=1)) ** 2).mean()
+            )
+
+            top5 = accuracy_topk(
+                packed_predictions, packed_targets, k=5
+            )
+
+            losses.update(loss.item(), packed_targets.size(0))
+            top5_accs.update(top5, packed_targets.size(0))
+
+            progress_bar.set_postfix(
+                {
+                    "val_loss": f"{losses.avg:.4f}",
+                    "val_top5": f"{top5_accs.avg:.2f}",
+                }
+            )
+
+    return losses.avg, top5_accs.avg
+
+
+def train_captioning(
+    encoder: nn.Module,
+    decoder: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    criterion: nn.Module,
+    decoder_optimizer: torch.optim.Optimizer,
+    encoder_optimizer: Optional[torch.optim.Optimizer],
+    device: torch.device,
+    run_dir: Path,
+    vocab: Vocabulary,
+    model_config: Dict,
+    num_epochs: int = 50,
+    grad_clip: float = 5.0,
+    alpha_c: float = 1.0,
+    use_wandb: bool = True,
+) -> Tuple[Dict[str, List], Path]:
+    """Full training loop for the encoder-decoder captioning model.
+
+    Assumes a wandb run is already active when use_wandb=True.
+    Returns the history dict and the path to checkpoint_best.pth.
+    """
+    best_val_loss = float("inf")
+    best_ckpt_path = run_dir / "checkpoint_best.pth"
+
+    history: Dict[str, List] = {
+        "epoch": [],
+        "train_loss": [],
+        "train_top5": [],
+        "val_loss": [],
+        "val_top5": [],
+    }
+
+    for epoch in range(1, num_epochs + 1):
+        print(f"\nEpoch {epoch}/{num_epochs}")
+        start_time = time.time()
+
+        train_loss, train_top5 = train_epoch(
+            encoder=encoder,
+            decoder=decoder,
+            train_loader=train_loader,
+            criterion=criterion,
+            decoder_optimizer=decoder_optimizer,
+            encoder_optimizer=encoder_optimizer,
+            device=device,
+            grad_clip=grad_clip,
+            alpha_c=alpha_c,
+        )
+
+        val_loss, val_top5 = validate_epoch(
+            encoder=encoder,
+            decoder=decoder,
+            val_loader=val_loader,
+            criterion=criterion,
+            device=device,
+            alpha_c=alpha_c,
+        )
+
+        epoch_time = time.time() - start_time
+
+        history["epoch"].append(epoch)
+        history["train_loss"].append(train_loss)
+        history["train_top5"].append(train_top5)
+        history["val_loss"].append(val_loss)
+        history["val_top5"].append(val_top5)
+
+        pd.DataFrame(history).to_csv(
+            run_dir / "training_history.csv", index=False
+        )
+
+        is_best = val_loss < best_val_loss
+        if is_best:
+            best_val_loss = val_loss
+
+        if use_wandb:
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train/loss": train_loss,
+                    "train/top5_accuracy": train_top5,
+                    "val/loss": val_loss,
+                    "val/top5_accuracy": val_top5,
+                    "time/epoch_minutes": epoch_time / 60,
+                    "best/val_loss": best_val_loss,
+                },
+                step=epoch,
+            )
+
+        save_checkpoint(
+            run_dir=run_dir,
+            epoch=epoch,
+            encoder=encoder,
+            decoder=decoder,
+            decoder_optimizer=decoder_optimizer,
+            encoder_optimizer=encoder_optimizer,
+            best_val_loss=best_val_loss,
+            history=history,
+            vocab=vocab,
+            model_config=model_config,
+            is_best=is_best,
+        )
+
+        print(
+            f"Epoch {epoch} completed in "
+            f"{epoch_time / 60:.2f} minutes | "
+            f"train_loss={train_loss:.4f}, "
+            f"train_top5={train_top5:.2f}, "
+            f"val_loss={val_loss:.4f}, "
+            f"val_top5={val_top5:.2f}"
+            + (" [best]" if is_best else "")
+        )
+
+    print("Training finished.")
+    return history, best_ckpt_path
 
 
 def evaluate_bleu(
