@@ -29,7 +29,7 @@ from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu
 from PIL import Image
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 
 def device_check() -> torch.device:
