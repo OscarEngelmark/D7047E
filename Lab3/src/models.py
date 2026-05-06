@@ -222,14 +222,13 @@ class EncoderCNN(nn.Module):
         features = self.resnet(images)
         features = self.adaptive_pool(features)
 
-        # [batch_size, encoder_dim, H, W]
-        # -> [batch_size, H, W, encoder_dim]
+        # [batch_size, encoder_dim, H, W] -> [batch_size, H, W, encoder_dim]
         features = features.permute(0, 2, 3, 1)
 
         batch_size = features.size(0)
         encoder_dim = features.size(-1)
 
-        # Flatten spatial dimensions.
+        # Flatten spatial dimensions: [batch_size, H*W, encoder_dim]
         features = features.view(batch_size, -1, encoder_dim)
 
         return features
