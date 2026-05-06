@@ -315,14 +315,13 @@ def generate_caption_beam_search(
         for step in range(max_length):
             embeddings = decoder.embedding(word_ids)
 
-            context, alpha = decoder.attention(encoder_out, h)
+            context, _ = decoder.attention(encoder_out, h)
 
             gate = decoder.sigmoid(decoder.f_beta(h))
             context = gate * context
 
             h, c = decoder.decode_step(
-                torch.cat([embeddings, context], dim=1),
-                (h, c),
+                torch.cat([embeddings, context], dim=1), (h, c)
             )
 
             scores = decoder.fc(h)
@@ -343,10 +342,7 @@ def generate_caption_beam_search(
             next_word_ids = top_k_words % len(vocab)
 
             sequences = torch.cat(
-                [
-                    sequences[previous_beam_indices],
-                    next_word_ids.unsqueeze(1),
-                ],
+                [sequences[previous_beam_indices], next_word_ids.unsqueeze(1)],
                 dim=1,
             )
 
@@ -400,11 +396,7 @@ def generate_caption_beam_search(
     for token_id in best_sequence:
         word = vocab.idx2word.get(int(token_id), vocab.unk_token)
 
-        if word in {
-            vocab.start_token,
-            vocab.end_token,
-            vocab.pad_token,
-        }:
+        if word in {vocab.start_token, vocab.end_token, vocab.pad_token}:
             continue
 
         words.append(word)
@@ -414,12 +406,7 @@ def generate_caption_beam_search(
 
 def clean_reference_caption(caption: str) -> str:
     """Remove special tokens from a reference caption."""
-    return (
-        caption
-        .replace("<start>", "")
-        .replace("<end>", "")
-        .strip()
-    )
+    return caption.replace("<start>", "").replace("<end>", "").strip()
 
 
 def train_epoch(
@@ -474,14 +461,10 @@ def train_epoch(
         loss.backward()
 
         if grad_clip is not None:
-            nn.utils.clip_grad_norm_(
-                decoder.parameters(), grad_clip
-            )
+            nn.utils.clip_grad_norm_(decoder.parameters(), grad_clip)
 
             if encoder_optimizer is not None:
-                nn.utils.clip_grad_norm_(
-                    encoder.parameters(), grad_clip
-                )
+                nn.utils.clip_grad_norm_(encoder.parameters(), grad_clip)
 
         decoder_optimizer.step()
 
@@ -494,7 +477,6 @@ def train_epoch(
 
         losses.update(loss.item(), packed_targets.size(0))
         top5_accs.update(top5, packed_targets.size(0))
-
 
     return losses.avg, top5_accs.avg
 
@@ -589,9 +571,7 @@ def train_captioning(
         "val_top5": [],
     }
 
-    with tqdm(
-        range(1, num_epochs + 1), desc="Training", unit="epoch"
-    ) as pbar:
+    with tqdm(range(1, num_epochs + 1), desc="Training", unit="epoch") as pbar:
         for epoch in pbar:
             start_time = time.time()
 
