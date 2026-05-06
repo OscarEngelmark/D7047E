@@ -588,84 +588,84 @@ def train_captioning(
         "val_top5": [],
     }
 
-    epoch_bar = tqdm(
+    with tqdm(
         range(1, num_epochs + 1), desc="Training", unit="epoch"
-    )
-    for epoch in epoch_bar:
-        start_time = time.time()
+    ) as pbar:
+        for epoch in pbar:
+            start_time = time.time()
 
-        train_loss, train_top5 = train_epoch(
-            encoder=encoder,
-            decoder=decoder,
-            train_loader=train_loader,
-            criterion=criterion,
-            decoder_optimizer=decoder_optimizer,
-            encoder_optimizer=encoder_optimizer,
-            device=device,
-            grad_clip=grad_clip,
-            alpha_c=alpha_c,
-        )
+            train_loss, train_top5 = train_epoch(
+                encoder=encoder,
+                decoder=decoder,
+                train_loader=train_loader,
+                criterion=criterion,
+                decoder_optimizer=decoder_optimizer,
+                encoder_optimizer=encoder_optimizer,
+                device=device,
+                grad_clip=grad_clip,
+                alpha_c=alpha_c,
+            )
 
-        val_loss, val_top5 = validate_epoch(
-            encoder=encoder,
-            decoder=decoder,
-            val_loader=val_loader,
-            criterion=criterion,
-            device=device,
-            alpha_c=alpha_c,
-        )
+            val_loss, val_top5 = validate_epoch(
+                encoder=encoder,
+                decoder=decoder,
+                val_loader=val_loader,
+                criterion=criterion,
+                device=device,
+                alpha_c=alpha_c,
+            )
 
-        epoch_time = time.time() - start_time
+            epoch_time = time.time() - start_time
 
-        history["epoch"].append(epoch)
-        history["train_loss"].append(train_loss)
-        history["train_top5"].append(train_top5)
-        history["val_loss"].append(val_loss)
-        history["val_top5"].append(val_top5)
+            history["epoch"].append(epoch)
+            history["train_loss"].append(train_loss)
+            history["train_top5"].append(train_top5)
+            history["val_loss"].append(val_loss)
+            history["val_top5"].append(val_top5)
 
-        pd.DataFrame(history).to_csv(
-            run_dir / "training_history.csv", index=False
-        )
+            pd.DataFrame(history).to_csv(
+                run_dir / "training_history.csv", index=False
+            )
 
-        is_best = val_loss < best_val_loss
-        if is_best:
-            best_val_loss = val_loss
+            is_best = val_loss < best_val_loss
+            if is_best:
+                best_val_loss = val_loss
 
-        wandb.log(
-            {
-                "epoch": epoch,
-                "train/loss": train_loss,
-                "train/top5_accuracy": train_top5,
-                "val/loss": val_loss,
-                "val/top5_accuracy": val_top5,
-                "time/epoch_minutes": epoch_time / 60,
-                "best/val_loss": best_val_loss,
-            },
-            step=epoch,
-        )
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train/loss": train_loss,
+                    "train/top5_accuracy": train_top5,
+                    "val/loss": val_loss,
+                    "val/top5_accuracy": val_top5,
+                    "time/epoch_minutes": epoch_time / 60,
+                    "best/val_loss": best_val_loss,
+                },
+                step=epoch,
+            )
 
-        save_checkpoint(
-            run_dir=run_dir,
-            epoch=epoch,
-            encoder=encoder,
-            decoder=decoder,
-            decoder_optimizer=decoder_optimizer,
-            encoder_optimizer=encoder_optimizer,
-            best_val_loss=best_val_loss,
-            history=history,
-            vocab=vocab,
-            model_config=model_config,
-            is_best=is_best,
-        )
+            save_checkpoint(
+                run_dir=run_dir,
+                epoch=epoch,
+                encoder=encoder,
+                decoder=decoder,
+                decoder_optimizer=decoder_optimizer,
+                encoder_optimizer=encoder_optimizer,
+                best_val_loss=best_val_loss,
+                history=history,
+                vocab=vocab,
+                model_config=model_config,
+                is_best=is_best,
+            )
 
-        epoch_bar.set_postfix(
-            {
-                "train_loss": f"{train_loss:.4f}",
-                "val_loss": f"{val_loss:.4f}",
-                "val_top5": f"{val_top5:.2f}",
-                "best": is_best,
-            }
-        )
+            pbar.set_postfix(
+                {
+                    "train_loss": f"{train_loss:.4f}",
+                    "val_loss": f"{val_loss:.4f}",
+                    "val_top5": f"{val_top5:.2f}",
+                    "best": is_best,
+                }
+            )
 
     print("Training finished.")
     return history, best_ckpt_path
