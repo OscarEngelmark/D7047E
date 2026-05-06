@@ -142,9 +142,7 @@ def make_collate_fn(pad_idx: int) -> Callable:
 
     def caption_collate_fn(
         batch: List[Tuple[torch.Tensor, torch.Tensor, str]],
-    ) -> Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, List[str]
-    ]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
         """
         Pad captions to the same length within a batch.
 
