@@ -441,7 +441,7 @@ def train_epoch(
     losses = AverageMeter()
     top5_accs = AverageMeter()
 
-    progress_bar = tqdm(train_loader, desc="Training", leave=False)
+    progress_bar = tqdm(train_loader, desc="Training", leave=True)
 
     for images, captions, lengths, _ in progress_bar:
         images = images.to(device, non_blocking=True)
@@ -523,7 +523,7 @@ def validate_epoch(
     losses = AverageMeter()
     top5_accs = AverageMeter()
 
-    progress_bar = tqdm(val_loader, desc="Validation", leave=False)
+    progress_bar = tqdm(val_loader, desc="Validation", leave=True)
 
     with torch.no_grad():
         for images, captions, lengths, _ in progress_bar:
