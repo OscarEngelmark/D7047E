@@ -441,9 +441,7 @@ def train_epoch(
     losses = AverageMeter()
     top5_accs = AverageMeter()
 
-    progress_bar = tqdm(train_loader, desc="Training", leave=True)
-
-    for images, captions, lengths, _ in progress_bar:
+    for images, captions, lengths, _ in train_loader:
         images = images.to(device, non_blocking=True)
         captions = captions.to(device, non_blocking=True)
         lengths = lengths.to(device, non_blocking=True)
@@ -498,12 +496,6 @@ def train_epoch(
         losses.update(loss.item(), packed_targets.size(0))
         top5_accs.update(top5, packed_targets.size(0))
 
-        progress_bar.set_postfix(
-            {
-                "loss": f"{losses.avg:.4f}",
-                "top5": f"{top5_accs.avg:.2f}",
-            }
-        )
 
     return losses.avg, top5_accs.avg
 
@@ -523,10 +515,8 @@ def validate_epoch(
     losses = AverageMeter()
     top5_accs = AverageMeter()
 
-    progress_bar = tqdm(val_loader, desc="Validation", leave=True)
-
     with torch.no_grad():
-        for images, captions, lengths, _ in progress_bar:
+        for images, captions, lengths, _ in val_loader:
             images = images.to(device, non_blocking=True)
             captions = captions.to(device, non_blocking=True)
             lengths = lengths.to(device, non_blocking=True)
@@ -564,13 +554,6 @@ def validate_epoch(
             losses.update(loss.item(), packed_targets.size(0))
             top5_accs.update(top5, packed_targets.size(0))
 
-            progress_bar.set_postfix(
-                {
-                    "val_loss": f"{losses.avg:.4f}",
-                    "val_top5": f"{top5_accs.avg:.2f}",
-                }
-            )
-
     return losses.avg, top5_accs.avg
 
 
@@ -589,11 +572,10 @@ def train_captioning(
     num_epochs: int = 50,
     grad_clip: float = 5.0,
     alpha_c: float = 1.0,
-    use_wandb: bool = True,
 ) -> Tuple[Dict[str, List], Path]:
     """Full training loop for the encoder-decoder captioning model.
 
-    Assumes a wandb run is already active when use_wandb=True.
+    Assumes a wandb run is already active.
     Returns the history dict and the path to checkpoint_best.pth.
     """
     best_val_loss = float("inf")
@@ -607,8 +589,10 @@ def train_captioning(
         "val_top5": [],
     }
 
-    for epoch in range(1, num_epochs + 1):
-        print(f"\nEpoch {epoch}/{num_epochs}")
+    epoch_bar = tqdm(
+        range(1, num_epochs + 1), desc="Training", unit="epoch"
+    )
+    for epoch in epoch_bar:
         start_time = time.time()
 
         train_loss, train_top5 = train_epoch(
@@ -648,19 +632,18 @@ def train_captioning(
         if is_best:
             best_val_loss = val_loss
 
-        if use_wandb:
-            wandb.log(
-                {
-                    "epoch": epoch,
-                    "train/loss": train_loss,
-                    "train/top5_accuracy": train_top5,
-                    "val/loss": val_loss,
-                    "val/top5_accuracy": val_top5,
-                    "time/epoch_minutes": epoch_time / 60,
-                    "best/val_loss": best_val_loss,
-                },
-                step=epoch,
-            )
+        wandb.log(
+            {
+                "epoch": epoch,
+                "train/loss": train_loss,
+                "train/top5_accuracy": train_top5,
+                "val/loss": val_loss,
+                "val/top5_accuracy": val_top5,
+                "time/epoch_minutes": epoch_time / 60,
+                "best/val_loss": best_val_loss,
+            },
+            step=epoch,
+        )
 
         save_checkpoint(
             run_dir=run_dir,
@@ -676,14 +659,13 @@ def train_captioning(
             is_best=is_best,
         )
 
-        print(
-            f"Epoch {epoch} completed in "
-            f"{epoch_time / 60:.2f} minutes | "
-            f"train_loss={train_loss:.4f}, "
-            f"train_top5={train_top5:.2f}, "
-            f"val_loss={val_loss:.4f}, "
-            f"val_top5={val_top5:.2f}"
-            + (" [best]" if is_best else "")
+        epoch_bar.set_postfix(
+            {
+                "train_loss": f"{train_loss:.4f}",
+                "val_loss": f"{val_loss:.4f}",
+                "val_top5": f"{val_top5:.2f}",
+                "best": is_best,
+            }
         )
 
     print("Training finished.")
