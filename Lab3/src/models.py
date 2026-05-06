@@ -56,9 +56,7 @@ class Vocabulary:
     def numericalize(self, caption: str) -> List[int]:
         """Convert a caption string into a list of token IDs."""
         return [
-            self.word2idx.get(
-                word, self.word2idx[self.unk_token]
-            )
+            self.word2idx.get(word, self.word2idx[self.unk_token])
             for word in caption.split()
         ]
 
