@@ -578,6 +578,7 @@ def train_captioning(
     Returns the history dict and the path to checkpoint_best.pth.
     """
     best_val_loss = float("inf")
+    best_epoch = 0
     best_ckpt_path = run_dir / "checkpoint_best.pth"
 
     history: Dict[str, List] = {
@@ -630,6 +631,7 @@ def train_captioning(
             is_best = val_loss < best_val_loss
             if is_best:
                 best_val_loss = val_loss
+                best_epoch = epoch
 
             wandb.log(
                 {
@@ -663,7 +665,7 @@ def train_captioning(
                     "train_loss": f"{train_loss:.4f}",
                     "val_loss": f"{val_loss:.4f}",
                     "val_top5": f"{val_top5:.2f}",
-                    "best": is_best,
+                    "best": best_epoch,
                 }
             )
 
