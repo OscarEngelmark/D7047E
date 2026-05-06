@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import platform
-import re
 import sys
 import time
 from pathlib import Path
@@ -66,15 +65,6 @@ def load_captions_file(captions_path: Path) -> pd.DataFrame:
 
     return df
 
-
-def clean_caption(text: str) -> str:
-    """Lowercase, strip punctuation, and add start/end tokens."""
-    text = text.lower()
-    text = re.sub(r"[^a-zA-Z\s]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    tokens = [word for word in text.split() if len(word) > 1]
-    text = " ".join(tokens)
-    return f"<start> {text} <end>"
 
 
 def show_image_with_captions(
