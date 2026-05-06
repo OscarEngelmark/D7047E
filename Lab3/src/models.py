@@ -394,17 +394,20 @@ class DecoderRNNWithAttention(nn.Module):
         batch_size = encoder_out.size(0)
         num_pixels = encoder_out.size(1)
 
+        # Sort input data by decreasing caption lengths for efficient decoding
         caption_lengths, sort_ind = caption_lengths.sort(
             dim=0, descending=True
         )
         encoder_out = encoder_out[sort_ind]
         encoded_captions = encoded_captions[sort_ind]
 
+        # Embed captions: [batch_size, max_caption_length, embed_dim]
         embeddings = self.embedding(encoded_captions)
 
+        # Initialize LSTM state with mean image feature
         h, c = self.init_hidden_state(encoder_out)
 
-        # We do not decode the <end> token as an input target.
+        # We never feed <end> as decoder input
         decode_lengths = (caption_lengths - 1).tolist()
         max_decode_length = max(decode_lengths)
 
@@ -423,9 +426,7 @@ class DecoderRNNWithAttention(nn.Module):
         )
 
         for t in range(max_decode_length):
-            batch_size_t = sum(
-                length > t for length in decode_lengths
-            )
+            batch_size_t = sum(length > t for length in decode_lengths)
 
             context, alpha = self.attention(
                 encoder_out[:batch_size_t],
